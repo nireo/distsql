@@ -45,3 +45,16 @@ message ExecRes {
   int64 rows_affected = 2;
   string error = 3;
 }
+
+message StoreExecResponse {
+  repeated ExecRes results = 1;
+}
+
+message StoreQueryResponse {
+  repeated QueryRes results = 1;
+}
+
+service Store {
+  rpc Execute(Request) returns (StoreExecResponse) {}
+  rpc Query(QueryReq) returns (StoreQueryResponse) {}
+}

@@ -482,6 +482,100 @@ func (x *ExecRes) GetError() string {
 	return ""
 }
 
+type StoreExecResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Results []*ExecRes `protobuf:"bytes,1,rep,name=results,proto3" json:"results,omitempty"`
+}
+
+func (x *StoreExecResponse) Reset() {
+	*x = StoreExecResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_store_proto_msgTypes[7]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *StoreExecResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StoreExecResponse) ProtoMessage() {}
+
+func (x *StoreExecResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_store_proto_msgTypes[7]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StoreExecResponse.ProtoReflect.Descriptor instead.
+func (*StoreExecResponse) Descriptor() ([]byte, []int) {
+	return file_proto_store_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *StoreExecResponse) GetResults() []*ExecRes {
+	if x != nil {
+		return x.Results
+	}
+	return nil
+}
+
+type StoreQueryResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Results []*QueryRes `protobuf:"bytes,1,rep,name=results,proto3" json:"results,omitempty"`
+}
+
+func (x *StoreQueryResponse) Reset() {
+	*x = StoreQueryResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_store_proto_msgTypes[8]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *StoreQueryResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StoreQueryResponse) ProtoMessage() {}
+
+func (x *StoreQueryResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_store_proto_msgTypes[8]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StoreQueryResponse.ProtoReflect.Descriptor instead.
+func (*StoreQueryResponse) Descriptor() ([]byte, []int) {
+	return file_proto_store_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *StoreQueryResponse) GetResults() []*QueryRes {
+	if x != nil {
+		return x.Results
+	}
+	return nil
+}
+
 var File_proto_store_proto protoreflect.FileDescriptor
 
 var file_proto_store_proto_rawDesc = []byte{
@@ -524,9 +618,25 @@ var file_proto_store_proto_rawDesc = []byte{
 	0x77, 0x73, 0x5f, 0x61, 0x66, 0x66, 0x65, 0x63, 0x74, 0x65, 0x64, 0x18, 0x02, 0x20, 0x01, 0x28,
 	0x03, 0x52, 0x0c, 0x72, 0x6f, 0x77, 0x73, 0x41, 0x66, 0x66, 0x65, 0x63, 0x74, 0x65, 0x64, 0x12,
 	0x14, 0x0a, 0x05, 0x65, 0x72, 0x72, 0x6f, 0x72, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x05,
-	0x65, 0x72, 0x72, 0x6f, 0x72, 0x42, 0x20, 0x5a, 0x1e, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e,
-	0x63, 0x6f, 0x6d, 0x2f, 0x6e, 0x69, 0x72, 0x65, 0x6f, 0x2f, 0x64, 0x69, 0x73, 0x74, 0x73, 0x71,
-	0x6c, 0x2f, 0x73, 0x74, 0x6f, 0x72, 0x65, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x65, 0x72, 0x72, 0x6f, 0x72, 0x22, 0x3d, 0x0a, 0x11, 0x53, 0x74, 0x6f, 0x72, 0x65, 0x45, 0x78,
+	0x65, 0x63, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x28, 0x0a, 0x07, 0x72, 0x65,
+	0x73, 0x75, 0x6c, 0x74, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x0e, 0x2e, 0x73, 0x74,
+	0x6f, 0x72, 0x65, 0x2e, 0x45, 0x78, 0x65, 0x63, 0x52, 0x65, 0x73, 0x52, 0x07, 0x72, 0x65, 0x73,
+	0x75, 0x6c, 0x74, 0x73, 0x22, 0x3f, 0x0a, 0x12, 0x53, 0x74, 0x6f, 0x72, 0x65, 0x51, 0x75, 0x65,
+	0x72, 0x79, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x29, 0x0a, 0x07, 0x72, 0x65,
+	0x73, 0x75, 0x6c, 0x74, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x0f, 0x2e, 0x73, 0x74,
+	0x6f, 0x72, 0x65, 0x2e, 0x51, 0x75, 0x65, 0x72, 0x79, 0x52, 0x65, 0x73, 0x52, 0x07, 0x72, 0x65,
+	0x73, 0x75, 0x6c, 0x74, 0x73, 0x32, 0x75, 0x0a, 0x05, 0x53, 0x74, 0x6f, 0x72, 0x65, 0x12, 0x35,
+	0x0a, 0x07, 0x45, 0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x12, 0x0e, 0x2e, 0x73, 0x74, 0x6f, 0x72,
+	0x65, 0x2e, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x18, 0x2e, 0x73, 0x74, 0x6f, 0x72,
+	0x65, 0x2e, 0x53, 0x74, 0x6f, 0x72, 0x65, 0x45, 0x78, 0x65, 0x63, 0x52, 0x65, 0x73, 0x70, 0x6f,
+	0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x35, 0x0a, 0x05, 0x51, 0x75, 0x65, 0x72, 0x79, 0x12, 0x0f,
+	0x2e, 0x73, 0x74, 0x6f, 0x72, 0x65, 0x2e, 0x51, 0x75, 0x65, 0x72, 0x79, 0x52, 0x65, 0x71, 0x1a,
+	0x19, 0x2e, 0x73, 0x74, 0x6f, 0x72, 0x65, 0x2e, 0x53, 0x74, 0x6f, 0x72, 0x65, 0x51, 0x75, 0x65,
+	0x72, 0x79, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x42, 0x20, 0x5a, 0x1e,
+	0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x6e, 0x69, 0x72, 0x65, 0x6f,
+	0x2f, 0x64, 0x69, 0x73, 0x74, 0x73, 0x71, 0x6c, 0x2f, 0x73, 0x74, 0x6f, 0x72, 0x65, 0x62, 0x06,
+	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -541,15 +651,17 @@ func file_proto_store_proto_rawDescGZIP() []byte {
 	return file_proto_store_proto_rawDescData
 }
 
-var file_proto_store_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_proto_store_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_proto_store_proto_goTypes = []interface{}{
-	(*Parameter)(nil), // 0: store.Parameter
-	(*Statement)(nil), // 1: store.Statement
-	(*Request)(nil),   // 2: store.Request
-	(*QueryReq)(nil),  // 3: store.QueryReq
-	(*Values)(nil),    // 4: store.Values
-	(*QueryRes)(nil),  // 5: store.QueryRes
-	(*ExecRes)(nil),   // 6: store.ExecRes
+	(*Parameter)(nil),          // 0: store.Parameter
+	(*Statement)(nil),          // 1: store.Statement
+	(*Request)(nil),            // 2: store.Request
+	(*QueryReq)(nil),           // 3: store.QueryReq
+	(*Values)(nil),             // 4: store.Values
+	(*QueryRes)(nil),           // 5: store.QueryRes
+	(*ExecRes)(nil),            // 6: store.ExecRes
+	(*StoreExecResponse)(nil),  // 7: store.StoreExecResponse
+	(*StoreQueryResponse)(nil), // 8: store.StoreQueryResponse
 }
 var file_proto_store_proto_depIdxs = []int32{
 	0, // 0: store.Statement.params:type_name -> store.Parameter
@@ -557,11 +669,17 @@ var file_proto_store_proto_depIdxs = []int32{
 	2, // 2: store.QueryReq.request:type_name -> store.Request
 	0, // 3: store.Values.params:type_name -> store.Parameter
 	4, // 4: store.QueryRes.values:type_name -> store.Values
-	5, // [5:5] is the sub-list for method output_type
-	5, // [5:5] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	6, // 5: store.StoreExecResponse.results:type_name -> store.ExecRes
+	5, // 6: store.StoreQueryResponse.results:type_name -> store.QueryRes
+	2, // 7: store.Store.Execute:input_type -> store.Request
+	3, // 8: store.Store.Query:input_type -> store.QueryReq
+	7, // 9: store.Store.Execute:output_type -> store.StoreExecResponse
+	8, // 10: store.Store.Query:output_type -> store.StoreQueryResponse
+	9, // [9:11] is the sub-list for method output_type
+	7, // [7:9] is the sub-list for method input_type
+	7, // [7:7] is the sub-list for extension type_name
+	7, // [7:7] is the sub-list for extension extendee
+	0, // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_proto_store_proto_init() }
@@ -654,6 +772,30 @@ func file_proto_store_proto_init() {
 				return nil
 			}
 		}
+		file_proto_store_proto_msgTypes[7].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*StoreExecResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_proto_store_proto_msgTypes[8].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*StoreQueryResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
 	}
 	file_proto_store_proto_msgTypes[0].OneofWrappers = []interface{}{
 		(*Parameter_I)(nil),
@@ -668,9 +810,9 @@ func file_proto_store_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_proto_store_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   9,
 			NumExtensions: 0,
-			NumServices:   0,
+			NumServices:   1,
 		},
 		GoTypes:           file_proto_store_proto_goTypes,
 		DependencyIndexes: file_proto_store_proto_depIdxs,

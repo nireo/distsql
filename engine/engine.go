@@ -4,6 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
+	"strings"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 	store "github.com/nireo/distsql/proto"
@@ -142,4 +145,79 @@ func convertParamsToSQL(params []*store.Parameter) ([]any, error) {
 	}
 
 	return values, nil
+}
+
+func convertToProto(types []string, row []any) ([]*store.Parameter, error) {
+	values := make([]*store.Parameter, 0)
+
+	for i, val := range row {
+		switch v := val.(type) {
+		case int:
+		case int64:
+			values = append(values, &store.Parameter{
+				Value: &store.Parameter_I{I: v},
+			})
+		case float64:
+			values = append(values, &store.Parameter{
+				Value: &store.Parameter_D{D: v},
+			})
+		case bool:
+			values = append(values, &store.Parameter{
+				Value: &store.Parameter_B{B: v},
+			})
+		case string:
+			values = append(values, &store.Parameter{
+				Value: &store.Parameter_S{S: v},
+			})
+		case []byte:
+			if isStringType(types[i]) {
+				values = append(values, &store.Parameter{
+					Value: &store.Parameter_S{S: string(v)},
+				})
+			} else {
+				values = append(values, &store.Parameter{
+					Value: &store.Parameter_Y{Y: v},
+				})
+			}
+		case time.Time:
+			str, err := v.MarshalText()
+			if err != nil {
+				return nil, err
+			}
+			values[i] = &store.Parameter{
+				Value: &store.Parameter_S{
+					S: string(str),
+				},
+			}
+		case nil:
+			continue
+		default:
+			return nil, fmt.Errorf("unrecognized type: %T", val)
+		}
+	}
+
+	return values, nil
+}
+
+func isStringType(t string) bool {
+	return t == "text" ||
+		t == "json" ||
+		t == "" ||
+		strings.HasPrefix(t, "varchar") ||
+		strings.HasPrefix(t, "varying character") ||
+		strings.HasPrefix(t, "nchar") ||
+		strings.HasPrefix(t, "native character") ||
+		strings.HasPrefix(t, "nvarchar") ||
+		strings.HasPrefix(t, "clob")
+}
+
+func (eng *Engine) FileSize() (int64, error) {
+	if eng.isMem {
+		return 0, nil
+	}
+	fi, err := os.Stat(eng.path)
+	if err != nil {
+		return 0, err
+	}
+	return fi.Size(), nil
 }
