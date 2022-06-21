@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package store;
+option go_package = "github.com/nireo/distsql/store";
+
+// Protobuf defintions take inspiration from rqlite
+message Parameter {
+  oneof value {
+    sint64 i = 1;
+    double d = 2;
+    bool b = 3;
+    bytes y = 4;
+    string s = 5;
+  }
+  string name = 6;
+}
+
+message Statement {
+  string sql = 1;
+  repeated Parameter params = 2;
+}
+
+message Request {
+  bool transaction = 1;
+  repeated Statement statements = 2;
+}
+
+// Same fields as request for now, but in the future it might change.
+message QueryReq {
+  Request request = 1;
+}
+
+message Values {
+  repeated Parameter params = 1;
+}
+
+message QueryRes {
+  repeated string columns = 1; // The names of the columns
+  repeated string types = 2; // The types of the values
+  repeated Values values = 3;
+}
