@@ -39,3 +39,9 @@ message QueryRes {
   repeated string types = 2; // The types of the values
   repeated Values values = 3;
 }
+
+message ExecRes {
+  int64 last_insert_id = 1;
+  int64 rows_affected = 2;
+  string error = 3;
+}

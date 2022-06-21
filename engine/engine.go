@@ -1,10 +1,12 @@
 package engine
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 
 	_ "github.com/mattn/go-sqlite3"
+	store "github.com/nireo/distsql/proto"
 )
 
 type Engine struct {
@@ -61,4 +63,83 @@ func (eng *Engine) Close() error {
 	}
 
 	return eng.writeDB.Close()
+}
+
+func (eng *Engine) ExecString(str string) []*store.QueryReq {
+	return nil
+}
+
+func (eng *Engine) Exec(req *store.Request) ([]*store.ExecRes, error) {
+	conn, err := eng.writeDB.Conn(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	// we are only using the connection at this point
+	// TODO: implement the transaction version
+
+	results := make([]*store.ExecRes, 0)
+
+	for _, stmt := range req.Statements {
+		res := &store.ExecRes{}
+
+		sqlParams, err := convertParamsToSQL(stmt.Params)
+		if err != nil {
+			res.Error = err.Error()
+			results = append(results, res)
+			continue
+		}
+
+		sqlRes, err := conn.ExecContext(context.Background(), stmt.Sql, sqlParams...)
+		if err != nil {
+			res.Error = err.Error()
+			results = append(results, res)
+			continue
+		}
+
+		res.RowsAffected, err = sqlRes.RowsAffected()
+		if err != nil {
+			res.Error = err.Error()
+			results = append(results, res)
+			continue
+		}
+
+		res.LastInsertId, err = sqlRes.LastInsertId()
+		if err != nil {
+			res.Error = err.Error()
+			results = append(results, res)
+			continue
+		}
+
+		results = append(results, res)
+	}
+
+	return results, nil
+}
+
+func convertParamsToSQL(params []*store.Parameter) ([]any, error) {
+	if params == nil {
+		return nil, nil
+	}
+
+	values := make([]any, 0)
+	for _, p := range params {
+		switch p.GetValue().(type) {
+		case *store.Parameter_I:
+			values = append(values, sql.Named(p.GetName(), p.GetI()))
+		case *store.Parameter_D:
+			values = append(values, sql.Named(p.GetName(), p.GetD()))
+		case *store.Parameter_B:
+			values = append(values, sql.Named(p.GetName(), p.GetB()))
+		case *store.Parameter_Y:
+			values = append(values, sql.Named(p.GetName(), p.GetY()))
+		case *store.Parameter_S:
+			values = append(values, sql.Named(p.GetName(), p.GetS()))
+		default:
+			return nil, fmt.Errorf("unsupported parameter type: %T", params)
+		}
+	}
+
+	return values, nil
 }
