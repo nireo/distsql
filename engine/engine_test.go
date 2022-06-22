@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/nireo/distsql/engine"
+	"github.com/nireo/distsql/proto/encoding"
 )
 
 func TestCreation(t *testing.T) {
@@ -16,7 +17,7 @@ func TestCreation(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 
-	dbpath := path.Join(dir, "testdb")
+	dbpath := path.Join(dir, "test.db")
 
 	eng, err := engine.Open(dbpath)
 	if err != nil {
@@ -42,4 +43,38 @@ func TestCreation(t *testing.T) {
 	if err = eng.Close(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestCreateTable(t *testing.T) {
+	dir, err := ioutil.TempDir("", "distsql-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+
+	dbpath := path.Join(dir, "test.db")
+
+	eng, err := engine.Open(dbpath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := eng.ExecString("CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, name TEXT)")
+	if err != nil {
+		t.Fatalf("failed to create table: %s", err.Error())
+	}
+
+	jsonRes := convertToJSON(res)
+	if jsonRes != "[{}]" {
+		t.Fatalf("unrecognized output. want=%s got=%s", "[{}]", jsonRes)
+	}
+}
+
+func convertToJSON(a any) string {
+	j, err := encoding.ProtoToJSON(a)
+	if err != nil {
+		return ""
+	}
+
+	return string(j)
 }

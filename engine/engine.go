@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"time"
@@ -28,15 +29,21 @@ func Open(path string) (*Engine, error) {
 		return nil, err
 	}
 
+	log.Printf("created write connection")
+
 	// read-only database connection
 	readDB, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?mode=ro", path))
 	if err != nil {
 		return nil, err
 	}
 
+	log.Printf("created read connection")
+
 	if err := writeDB.Ping(); err != nil {
 		return nil, fmt.Errorf("failed database ping: %s", err)
 	}
+
+	log.Printf("pinged database connection")
 
 	return &Engine{
 		readDB:   readDB,
@@ -68,8 +75,14 @@ func (eng *Engine) Close() error {
 	return eng.writeDB.Close()
 }
 
-func (eng *Engine) ExecString(str string) []*store.QueryReq {
-	return nil
+func (eng *Engine) ExecString(str string) ([]*store.ExecRes, error) {
+	req := &store.Request{
+		Statements: []*store.Statement{
+			{Sql: str},
+		},
+	}
+
+	return eng.Exec(req)
 }
 
 func (eng *Engine) Exec(req *store.Request) ([]*store.ExecRes, error) {
