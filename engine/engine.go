@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mattn/go-sqlite3"
 	_ "github.com/mattn/go-sqlite3"
 	store "github.com/nireo/distsql/proto"
 )
@@ -100,6 +101,10 @@ func (eng *Engine) Exec(req *store.Request) ([]*store.ExecRes, error) {
 	for _, stmt := range req.Statements {
 		res := &store.ExecRes{}
 
+		if stmt.Sql == "" {
+			continue
+		}
+
 		sqlParams, err := convertParamsToSQL(stmt.Params)
 		if err != nil {
 			res.Error = err.Error()
@@ -128,6 +133,132 @@ func (eng *Engine) Exec(req *store.Request) ([]*store.ExecRes, error) {
 			continue
 		}
 
+		results = append(results, res)
+	}
+
+	return results, nil
+}
+
+func (eng *Engine) QueryString(query string) ([]*store.QueryRes, error) {
+	r := &store.Request{
+		Statements: []*store.Statement{
+			{Sql: query},
+		},
+	}
+	return eng.Query(r)
+}
+
+func (eng *Engine) Query(req *store.Request) ([]*store.QueryRes, error) {
+	// get database connection from the read database
+	conn, err := eng.readDB.Conn(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	// TODO: Implement transaction
+	results := make([]*store.QueryRes, 0)
+
+	for _, q := range req.Statements {
+		if q.Sql == "" {
+			continue
+		}
+
+		res := &store.QueryRes{}
+		var readOnly bool
+
+		// This code is used to make sure that the given query, does
+		// not actually try to modify the database.
+		if err := conn.Raw(func(dConn any) error {
+			c := dConn.(*sqlite3.SQLiteConn)
+			stmt, err := c.Prepare(q.Sql)
+			if err != nil {
+				return err
+			}
+			defer stmt.Close()
+
+			sstmt := stmt.(*sqlite3.SQLiteStmt)
+			readOnly = sstmt.Readonly()
+			return nil
+		}); err != nil {
+			res.Error = err.Error()
+			results = append(results, res)
+			continue
+		}
+
+		// tried to modify the database
+		if !readOnly {
+			res.Error = "tried to change the database in a query operation"
+			results = append(results, res)
+			continue
+		}
+
+		params, err := convertParamsToSQL(q.Params)
+		if err != nil {
+			res.Error = err.Error()
+			results = append(results, res)
+			continue
+		}
+
+		r, err := conn.QueryContext(context.Background(), q.Sql, params...)
+		if err != nil {
+			res.Error = err.Error()
+			results = append(results, res)
+			continue
+		}
+		defer r.Close()
+
+		types, err := r.ColumnTypes()
+		if err != nil {
+			res.Error = err.Error()
+			results = append(results, res)
+			continue
+		}
+		formattedTypes := make([]string, len(types))
+		for i := range types {
+			formattedTypes[i] = strings.ToLower(types[i].DatabaseTypeName())
+		}
+
+		cols, err := r.Columns()
+		if err != nil {
+			res.Error = err.Error()
+			results = append(results, res)
+			continue
+		}
+
+		for r.Next() { // scan rows
+			dest := make([]any, len(cols))
+			destPtrs := make([]any, len(dest))
+			for i := range dest {
+				destPtrs[i] = &dest[i]
+			}
+
+			// Scan copies the the columns in the current row into the values pointed at by dest
+			if err := r.Scan(destPtrs...); err != nil {
+				return nil, err
+			}
+
+			prs, err := convertToProto(formattedTypes, dest)
+			if err != nil {
+				return nil, err
+			}
+
+			res.Values = append(res.Values, &store.Values{
+				Params: prs,
+			})
+		}
+
+		if err := r.Err(); err != nil {
+			res.Error = err.Error()
+			results = append(results, res)
+			continue
+		}
+
+		// we set the values here, since if something fails, we don't want
+		// to return a json response where half of the items are missing
+		// and half are there.
+		res.Columns = cols
+		res.Types = formattedTypes
 		results = append(results, res)
 	}
 
