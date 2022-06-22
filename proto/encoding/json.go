@@ -3,6 +3,7 @@ package encoding
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 
 	store "github.com/nireo/distsql/proto"
 )
@@ -15,6 +16,13 @@ type Result struct {
 	Time         float64 `json:"time,omitempty"`
 }
 
+type EncQueryRes struct {
+	Columns []string `json:"columns,omitempty"`
+	Types   []string `json:"types,omitempty"`
+	Values  [][]any  `json:"values,omitempty"`
+	Error   string   `json:"error,omitempty"`
+}
+
 func convertExecuteResult(res *store.ExecRes) *Result {
 	return &Result{
 		LastInsertID: res.LastInsertId,
@@ -22,6 +30,58 @@ func convertExecuteResult(res *store.ExecRes) *Result {
 		Error:        res.Error,
 		Time:         0,
 	}
+}
+
+func convertValues(dst [][]any, v []*store.Values) error {
+	for i := range v {
+		if v[i] == nil {
+			dst[i] = nil
+			continue
+		}
+
+		params := v[i].GetParams()
+		if params == nil {
+			dst[i] = nil
+			continue
+		}
+
+		values := make([]interface{}, len(params))
+		for p := range params {
+			switch pv := params[p].GetValue().(type) {
+			case *store.Parameter_I:
+				values[i] = pv.I
+			case *store.Parameter_D:
+				values[i] = pv.D
+			case *store.Parameter_S:
+				values[i] = pv.S
+			case *store.Parameter_B:
+				values[i] = pv.B
+			case *store.Parameter_Y:
+				values[i] = pv.Y
+			case nil:
+				values[i] = nil
+			default:
+				return fmt.Errorf("unrecognized parameter type: %T", pv)
+			}
+		}
+
+		dst[i] = values
+	}
+	return nil
+}
+
+func convertQueryRes(q *store.QueryRes) (*EncQueryRes, error) {
+	dstValues := make([][]any, len(q.Values))
+	if err := convertValues(dstValues, q.Values); err != nil {
+		return nil, err
+	}
+
+	return &EncQueryRes{
+		Columns: q.Columns,
+		Types:   q.Types,
+		Values:  dstValues,
+		Error:   q.Error,
+	}, nil
 }
 
 func structToJson(v any) ([]byte, error) {
@@ -46,6 +106,28 @@ func ProtoToJSON(v any) ([]byte, error) {
 		vals := make([]*Result, len(val))
 		for i, res := range val {
 			vals[i] = convertExecuteResult(res)
+		}
+		return structToJson(vals)
+	case *store.QueryRes:
+		res, err := convertQueryRes(val)
+		if err != nil {
+			return nil, err
+		}
+		return structToJson(res)
+	case []*store.QueryRes:
+		var err error
+		results := make([]*EncQueryRes, len(val))
+		for i := range results {
+			results[i], err = convertQueryRes(val[i])
+			if err != nil {
+				return nil, err
+			}
+		}
+		return structToJson(results)
+	case []*store.Values:
+		vals := make([][]any, len(val))
+		if err := convertValues(vals, val); err != nil {
+			return nil, err
 		}
 		return structToJson(vals)
 	default:

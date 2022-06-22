@@ -38,6 +38,7 @@ message QueryRes {
   repeated string columns = 1; // The names of the columns
   repeated string types = 2; // The types of the values
   repeated Values values = 3;
+  string error = 4;
 }
 
 message ExecRes {
