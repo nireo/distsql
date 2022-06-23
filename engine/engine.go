@@ -22,7 +22,8 @@ type Engine struct {
 	path     string
 }
 
-// Open creates a new database engine instance. It starts a read-only and a write connection.
+// Open creates a new database engine instance.
+// It starts a read-only and a write connection.
 func Open(path string) (*Engine, error) {
 	// write and read database connection
 	writeDB, err := sql.Open("sqlite3", fmt.Sprintf("file:%s", path))
@@ -364,4 +365,41 @@ func (eng *Engine) FileSize() (int64, error) {
 		return 0, err
 	}
 	return fi.Size(), nil
+}
+
+// Size returns the database size in bytes.
+func (eng *Engine) Size() (int64, error) {
+	rows, err := eng.QueryString(
+		`SELECT page_count * page_size as size FROM pragma_page_count(), pragma_page_size()`,
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	return rows[0].Values[0].Params[0].GetI(), nil
+}
+
+// Serialize returns the database as bytes.
+func (eng *Engine) Serialize() ([]byte, error) {
+	return os.ReadFile(eng.path)
+}
+
+func (eng *Engine) Stats() (map[string]int64, error) {
+	ms := make(map[string]int64)
+	for _, p := range []string{
+		"max_page_count",
+		"page_count",
+		"page_size",
+		"hard_heap_limit",
+		"soft_heap_limit",
+		"cache_size",
+		"freelist_count",
+	} {
+		res, err := eng.QueryString(fmt.Sprintf("PRAGMA %s", p))
+		if err != nil {
+			return nil, err
+		}
+		ms[p] = res[0].Values[0].Params[0].GetI()
+	}
+	return ms, nil
 }
