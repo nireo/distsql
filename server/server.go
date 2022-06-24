@@ -53,6 +53,32 @@ func (s *grpcServer) Query(ctx context.Context, req *store.QueryReq) (
 	}, nil
 }
 
+func (s *grpcServer) QueryString(ctx context.Context, req *store.QueryStringReq) (
+	*store.StoreQueryResponse, error,
+) {
+	results, err := s.db.QueryString(req.Query)
+	if err != nil {
+		return nil, err
+	}
+
+	return &store.StoreQueryResponse{
+		Results: results,
+	}, nil
+}
+
+func (s *grpcServer) ExecString(ctx context.Context, req *store.ExecStringReq) (
+	*store.StoreExecResponse, error,
+) {
+	results, err := s.db.ExecString(req.Exec)
+	if err != nil {
+		return nil, err
+	}
+
+	return &store.StoreExecResponse{
+		Results: results,
+	}, nil
+}
+
 func NewGRPCServer(conf *Config) (*grpc.Server, error) {
 	gsrv := grpc.NewServer()
 	srv, err := newgrpcServer(conf)

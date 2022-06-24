@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"io/ioutil"
 	"net"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/nireo/distsql/engine"
 	store "github.com/nireo/distsql/proto"
+	"github.com/nireo/distsql/proto/encoding"
 	"google.golang.org/grpc"
 )
 
@@ -73,6 +75,7 @@ func TestServer(t *testing.T) {
 		config *Config,
 	){
 		"execute/query a record into the database": testExecQuery,
+		"table not found":                          testNotFound,
 	} {
 		t.Run(scenario, func(t *testing.T) {
 			client, config, teardown := setupTest(t, nil)
@@ -83,4 +86,54 @@ func TestServer(t *testing.T) {
 }
 
 func testExecQuery(t *testing.T, client store.StoreClient, config *Config) {
+	ctx := context.Background()
+
+	results, err := client.ExecString(ctx, &store.ExecStringReq{
+		Exec: "CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, name TEXT)",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	jsonRes := convertToJSON(results.Results)
+	if jsonRes != "[{}]" {
+		t.Fatalf("unrecognized output. want=%s got=%s", "[{}]", jsonRes)
+	}
+
+	query, err := client.QueryString(ctx, &store.QueryStringReq{
+		Query: "SELECT * FROM test",
+	})
+	if err != nil {
+		t.Fatalf("failed reading table: %s", err.Error())
+	}
+
+	qjson := convertToJSON(query.Results)
+	if qjson != `[{"columns":["id","name"],"types":["integer","text"]}]` {
+		t.Fatalf("results don't match: %s", qjson)
+	}
+}
+
+func testNotFound(t *testing.T, client store.StoreClient, config *Config) {
+	ctx := context.Background()
+
+	query, err := client.QueryString(ctx, &store.QueryStringReq{
+		Query: "SELECT * FROM test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	qjson := convertToJSON(query.Results)
+	if qjson != `[{"error":"no such table: test"}]` {
+		t.Fatalf("results don't match: %s", qjson)
+	}
+}
+
+func convertToJSON(a any) string {
+	j, err := encoding.ProtoToJSON(a)
+	if err != nil {
+		return ""
+	}
+
+	return string(j)
 }
