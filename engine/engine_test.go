@@ -10,12 +10,12 @@ import (
 	"github.com/nireo/distsql/proto/encoding"
 )
 
-func TestCreation(t *testing.T) {
+func createTestEngine(t *testing.T) (*engine.Engine, error) {
+	t.Helper()
 	dir, err := ioutil.TempDir("", "distsql-test-")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(dir)
 
 	dbpath := path.Join(dir, "test.db")
 
@@ -24,12 +24,18 @@ func TestCreation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if eng == nil {
-		t.Fatalf("engine instance nil")
-	}
+	t.Cleanup(func() {
+		os.RemoveAll(dir)
+		eng.Close()
+	})
 
-	if eng.Path() != dbpath {
-		t.Fatalf("engine path and db path don't match. want: %s | got %s", dbpath, eng.Path())
+	return eng, nil
+}
+
+func TestCreation(t *testing.T) {
+	eng, err := createTestEngine(t)
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	if eng.IsMem() {
@@ -46,15 +52,7 @@ func TestCreation(t *testing.T) {
 }
 
 func TestCreateTable(t *testing.T) {
-	dir, err := ioutil.TempDir("", "distsql-test-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
-
-	dbpath := path.Join(dir, "test.db")
-
-	eng, err := engine.Open(dbpath)
+	eng, err := createTestEngine(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,19 +79,10 @@ func TestCreateTable(t *testing.T) {
 }
 
 func TestDoesntExist(t *testing.T) {
-	dir, err := ioutil.TempDir("", "distsql-test-")
+	eng, err := createTestEngine(t)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(dir)
-
-	dbpath := path.Join(dir, "test.db")
-
-	eng, err := engine.Open(dbpath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer eng.Close()
 
 	query, err := eng.QueryString("SELECT * FROM test")
 	if err != nil {
@@ -107,19 +96,10 @@ func TestDoesntExist(t *testing.T) {
 }
 
 func TestGetSizes(t *testing.T) {
-	dir, err := ioutil.TempDir("", "distsql-test-")
+	eng, err := createTestEngine(t)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(dir)
-
-	dbpath := path.Join(dir, "test.db")
-
-	eng, err := engine.Open(dbpath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer eng.Close()
 
 	if _, err := eng.Size(); err != nil {
 		t.Fatalf("eng.Size() failed: %s", err)
@@ -131,19 +111,10 @@ func TestGetSizes(t *testing.T) {
 }
 
 func TestEmptyStatement(t *testing.T) {
-	dir, err := ioutil.TempDir("", "distsql-test-")
+	eng, err := createTestEngine(t)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(dir)
-
-	dbpath := path.Join(dir, "test.db")
-
-	eng, err := engine.Open(dbpath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer eng.Close()
 
 	if _, err := eng.ExecString(""); err != nil {
 		t.Fatalf("failed to execute: %s", err.Error())

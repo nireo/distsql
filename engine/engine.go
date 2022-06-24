@@ -87,10 +87,44 @@ func (eng *Engine) Exec(req *store.Request) ([]*store.ExecRes, error) {
 	}
 	defer conn.Close()
 
-	// we are only using the connection at this point
-	// TODO: implement the transaction version
+	type Runner interface {
+		ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
+	}
+
+	var runner Runner
+	var transaction *sql.Tx
+	if req.Transaction {
+		transaction, err = conn.BeginTx(context.Background(), nil)
+		if err != nil {
+			return nil, err
+		}
+
+		defer func() {
+			if transaction != nil {
+				transaction.Rollback()
+			}
+		}()
+
+		runner = transaction
+	} else {
+		runner = conn
+	}
 
 	results := make([]*store.ExecRes, 0)
+
+	// returns bool determining if the loop should break
+	errorHandler := func(res *store.ExecRes, err error) bool {
+		res.Error = err.Error()
+		results = append(results, res)
+
+		if transaction != nil {
+			transaction.Rollback()
+			transaction = nil
+			return false
+		}
+
+		return true
+	}
 
 	for _, stmt := range req.Statements {
 		res := &store.ExecRes{}
@@ -101,36 +135,44 @@ func (eng *Engine) Exec(req *store.Request) ([]*store.ExecRes, error) {
 
 		sqlParams, err := convertParamsToSQL(stmt.Params)
 		if err != nil {
-			res.Error = err.Error()
-			results = append(results, res)
-			continue
+			if errorHandler(res, err) {
+				continue
+			}
+			break
 		}
 
-		sqlRes, err := conn.ExecContext(context.Background(), stmt.Sql, sqlParams...)
+		sqlRes, err := runner.ExecContext(context.Background(), stmt.Sql, sqlParams...)
 		if err != nil {
-			res.Error = err.Error()
-			results = append(results, res)
-			continue
+			if errorHandler(res, err) {
+				continue
+			}
+			break
 		}
 
 		res.RowsAffected, err = sqlRes.RowsAffected()
 		if err != nil {
-			res.Error = err.Error()
-			results = append(results, res)
-			continue
+			if errorHandler(res, err) {
+				continue
+			}
+			break
 		}
 
 		res.LastInsertId, err = sqlRes.LastInsertId()
 		if err != nil {
-			res.Error = err.Error()
-			results = append(results, res)
-			continue
+			if errorHandler(res, err) {
+				continue
+			}
+			break
 		}
 
 		results = append(results, res)
 	}
 
-	return results, nil
+	if transaction != nil {
+		err = transaction.Commit()
+	}
+
+	return results, err
 }
 
 func (eng *Engine) QueryString(query string) ([]*store.QueryRes, error) {
@@ -143,6 +185,7 @@ func (eng *Engine) QueryString(query string) ([]*store.QueryRes, error) {
 }
 
 func (eng *Engine) Query(req *store.Request) ([]*store.QueryRes, error) {
+	var err error
 	// get database connection from the read database
 	conn, err := eng.readDB.Conn(context.Background())
 	if err != nil {
@@ -150,9 +193,23 @@ func (eng *Engine) Query(req *store.Request) ([]*store.QueryRes, error) {
 	}
 	defer conn.Close()
 
-	// TODO: Implement transaction
-	results := make([]*store.QueryRes, 0)
+	type Runner interface {
+		QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error)
+	}
+	var runner Runner
+	var transaction *sql.Tx
+	if req.Transaction {
+		transaction, err = conn.BeginTx(context.Background(), nil)
+		if err != nil {
+			return nil, err
+		}
+		defer transaction.Rollback()
+		runner = transaction
+	} else {
+		runner = conn
+	}
 
+	results := make([]*store.QueryRes, 0)
 	for _, q := range req.Statements {
 		if q.Sql == "" {
 			continue
@@ -194,7 +251,7 @@ func (eng *Engine) Query(req *store.Request) ([]*store.QueryRes, error) {
 			continue
 		}
 
-		r, err := conn.QueryContext(context.Background(), q.Sql, params...)
+		r, err := runner.QueryContext(context.Background(), q.Sql, params...)
 		if err != nil {
 			res.Error = err.Error()
 			results = append(results, res)
@@ -256,7 +313,11 @@ func (eng *Engine) Query(req *store.Request) ([]*store.QueryRes, error) {
 		results = append(results, res)
 	}
 
-	return results, nil
+	if transaction != nil {
+		err = transaction.Commit()
+	}
+
+	return results, err
 }
 
 func convertParamsToSQL(params []*store.Parameter) ([]any, error) {
