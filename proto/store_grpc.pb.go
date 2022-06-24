@@ -24,6 +24,8 @@ const _ = grpc.SupportPackageIsVersion7
 type StoreClient interface {
 	Execute(ctx context.Context, in *Request, opts ...grpc.CallOption) (*StoreExecResponse, error)
 	Query(ctx context.Context, in *QueryReq, opts ...grpc.CallOption) (*StoreQueryResponse, error)
+	ExecString(ctx context.Context, in *ExecStringReq, opts ...grpc.CallOption) (*StoreExecResponse, error)
+	QueryString(ctx context.Context, in *QueryStringReq, opts ...grpc.CallOption) (*StoreQueryResponse, error)
 }
 
 type storeClient struct {
@@ -52,12 +54,32 @@ func (c *storeClient) Query(ctx context.Context, in *QueryReq, opts ...grpc.Call
 	return out, nil
 }
 
+func (c *storeClient) ExecString(ctx context.Context, in *ExecStringReq, opts ...grpc.CallOption) (*StoreExecResponse, error) {
+	out := new(StoreExecResponse)
+	err := c.cc.Invoke(ctx, "/store.Store/ExecString", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *storeClient) QueryString(ctx context.Context, in *QueryStringReq, opts ...grpc.CallOption) (*StoreQueryResponse, error) {
+	out := new(StoreQueryResponse)
+	err := c.cc.Invoke(ctx, "/store.Store/QueryString", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // StoreServer is the server API for Store service.
 // All implementations must embed UnimplementedStoreServer
 // for forward compatibility
 type StoreServer interface {
 	Execute(context.Context, *Request) (*StoreExecResponse, error)
 	Query(context.Context, *QueryReq) (*StoreQueryResponse, error)
+	ExecString(context.Context, *ExecStringReq) (*StoreExecResponse, error)
+	QueryString(context.Context, *QueryStringReq) (*StoreQueryResponse, error)
 	mustEmbedUnimplementedStoreServer()
 }
 
@@ -70,6 +92,12 @@ func (UnimplementedStoreServer) Execute(context.Context, *Request) (*StoreExecRe
 }
 func (UnimplementedStoreServer) Query(context.Context, *QueryReq) (*StoreQueryResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Query not implemented")
+}
+func (UnimplementedStoreServer) ExecString(context.Context, *ExecStringReq) (*StoreExecResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ExecString not implemented")
+}
+func (UnimplementedStoreServer) QueryString(context.Context, *QueryStringReq) (*StoreQueryResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method QueryString not implemented")
 }
 func (UnimplementedStoreServer) mustEmbedUnimplementedStoreServer() {}
 
@@ -120,6 +148,42 @@ func _Store_Query_Handler(srv interface{}, ctx context.Context, dec func(interfa
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Store_ExecString_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExecStringReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StoreServer).ExecString(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/store.Store/ExecString",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StoreServer).ExecString(ctx, req.(*ExecStringReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Store_QueryString_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryStringReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StoreServer).QueryString(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/store.Store/QueryString",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StoreServer).QueryString(ctx, req.(*QueryStringReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Store_ServiceDesc is the grpc.ServiceDesc for Store service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -134,6 +198,14 @@ var Store_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Query",
 			Handler:    _Store_Query_Handler,
+		},
+		{
+			MethodName: "ExecString",
+			Handler:    _Store_ExecString_Handler,
+		},
+		{
+			MethodName: "QueryString",
+			Handler:    _Store_QueryString_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

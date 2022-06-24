@@ -55,7 +55,18 @@ message StoreQueryResponse {
   repeated QueryRes results = 1;
 }
 
+message ExecStringReq {
+  string exec = 1;
+}
+
+message QueryStringReq {
+  string query = 1;
+}
+
 service Store {
   rpc Execute(Request) returns (StoreExecResponse) {}
   rpc Query(QueryReq) returns (StoreQueryResponse) {}
+
+  rpc ExecString(ExecStringReq) returns (StoreExecResponse) {}
+  rpc QueryString(QueryStringReq) returns (StoreQueryResponse) {}
 }
