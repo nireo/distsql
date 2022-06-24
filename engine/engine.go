@@ -186,7 +186,7 @@ func (eng *Engine) QueryString(query string) ([]*store.QueryRes, error) {
 
 func (eng *Engine) Query(req *store.Request) ([]*store.QueryRes, error) {
 	var err error
-	// get database connection from the read database
+	// get connection from the read database
 	conn, err := eng.readDB.Conn(context.Background())
 	if err != nil {
 		return nil, err
