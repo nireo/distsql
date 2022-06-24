@@ -68,6 +68,90 @@ func TestCreateTable(t *testing.T) {
 	if jsonRes != "[{}]" {
 		t.Fatalf("unrecognized output. want=%s got=%s", "[{}]", jsonRes)
 	}
+
+	query, err := eng.QueryString("SELECT * FROM test")
+	if err != nil {
+		t.Fatalf("failed reading table: %s", err.Error())
+	}
+
+	qjson := convertToJSON(query)
+	if qjson != `[{"columns":["id","name"],"types":["integer","text"]}]` {
+		t.Fatalf("results don't match: %s", qjson)
+	}
+}
+
+func TestDoesntExist(t *testing.T) {
+	dir, err := ioutil.TempDir("", "distsql-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+
+	dbpath := path.Join(dir, "test.db")
+
+	eng, err := engine.Open(dbpath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer eng.Close()
+
+	query, err := eng.QueryString("SELECT * FROM test")
+	if err != nil {
+		t.Fatalf("failed to query table: %s", err.Error())
+	}
+
+	qjson := convertToJSON(query)
+	if qjson != `[{"error":"no such table: test"}]` {
+		t.Fatalf("results don't match: %s", qjson)
+	}
+}
+
+func TestGetSizes(t *testing.T) {
+	dir, err := ioutil.TempDir("", "distsql-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+
+	dbpath := path.Join(dir, "test.db")
+
+	eng, err := engine.Open(dbpath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer eng.Close()
+
+	if _, err := eng.Size(); err != nil {
+		t.Fatalf("eng.Size() failed: %s", err)
+	}
+
+	if _, err := eng.FileSize(); err != nil {
+		t.Fatalf("eng.FileSize() failed: %s", err)
+	}
+}
+
+func TestEmptyStatement(t *testing.T) {
+	dir, err := ioutil.TempDir("", "distsql-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+
+	dbpath := path.Join(dir, "test.db")
+
+	eng, err := engine.Open(dbpath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer eng.Close()
+
+	if _, err := eng.ExecString(""); err != nil {
+		t.Fatalf("failed to execute: %s", err.Error())
+	}
+
+	if _, err := eng.ExecString(";"); err != nil {
+		t.Fatalf("failed to execute: %s", err.Error())
+	}
 }
 
 func convertToJSON(a any) string {
