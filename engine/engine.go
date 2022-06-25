@@ -280,7 +280,7 @@ func (eng *Engine) Query(req *store.Request) ([]*store.QueryRes, error) {
 		for r.Next() { // scan rows
 			dest := make([]any, len(cols))
 			destPtrs := make([]any, len(dest))
-			for i := range dest {
+			for i := range destPtrs {
 				destPtrs[i] = &dest[i]
 			}
 
@@ -321,81 +321,86 @@ func (eng *Engine) Query(req *store.Request) ([]*store.QueryRes, error) {
 }
 
 func convertParamsToSQL(params []*store.Parameter) ([]any, error) {
-	if params == nil {
-		return nil, nil
-	}
-
-	values := make([]any, 0)
-	for _, p := range params {
-		switch p.GetValue().(type) {
+	values := make([]interface{}, len(params))
+	for i := range params {
+		switch w := params[i].GetValue().(type) {
 		case *store.Parameter_I:
-			values = append(values, sql.Named(p.GetName(), p.GetI()))
+			values[i] = sql.Named(params[i].GetName(), w.I)
 		case *store.Parameter_D:
-			values = append(values, sql.Named(p.GetName(), p.GetD()))
+			values[i] = sql.Named(params[i].GetName(), w.D)
 		case *store.Parameter_B:
-			values = append(values, sql.Named(p.GetName(), p.GetB()))
+			values[i] = sql.Named(params[i].GetName(), w.B)
 		case *store.Parameter_Y:
-			values = append(values, sql.Named(p.GetName(), p.GetY()))
+			values[i] = sql.Named(params[i].GetName(), w.Y)
 		case *store.Parameter_S:
-			values = append(values, sql.Named(p.GetName(), p.GetS()))
+			values[i] = sql.Named(params[i].GetName(), w.S)
 		default:
-			return nil, fmt.Errorf("unsupported parameter type: %T", params)
+			return nil, fmt.Errorf("unsupported type: %T", w)
 		}
 	}
-
 	return values, nil
+
 }
 
 func convertToProto(types []string, row []any) ([]*store.Parameter, error) {
-	values := make([]*store.Parameter, 0)
-
-	for i, val := range row {
-		switch v := val.(type) {
+	values := make([]*store.Parameter, len(types))
+	for i, v := range row {
+		switch val := v.(type) {
 		case int:
 		case int64:
-			values = append(values, &store.Parameter{
-				Value: &store.Parameter_I{I: v},
-			})
+			values[i] = &store.Parameter{
+				Value: &store.Parameter_I{
+					I: val,
+				},
+			}
 		case float64:
-			values = append(values, &store.Parameter{
-				Value: &store.Parameter_D{D: v},
-			})
+			values[i] = &store.Parameter{
+				Value: &store.Parameter_D{
+					D: val,
+				},
+			}
 		case bool:
-			values = append(values, &store.Parameter{
-				Value: &store.Parameter_B{B: v},
-			})
+			values[i] = &store.Parameter{
+				Value: &store.Parameter_B{
+					B: val,
+				},
+			}
 		case string:
-			values = append(values, &store.Parameter{
-				Value: &store.Parameter_S{S: v},
-			})
+			values[i] = &store.Parameter{
+				Value: &store.Parameter_S{
+					S: val,
+				},
+			}
 		case []byte:
 			if isStringType(types[i]) {
-				values = append(values, &store.Parameter{
-					Value: &store.Parameter_S{S: string(v)},
-				})
+				values[i].Value = &store.Parameter_S{
+					S: string(val),
+				}
 			} else {
-				values = append(values, &store.Parameter{
-					Value: &store.Parameter_Y{Y: v},
-				})
+				values[i] = &store.Parameter{
+					Value: &store.Parameter_Y{
+						Y: val,
+					},
+				}
 			}
 		case time.Time:
-			str, err := v.MarshalText()
+			rfc3339, err := val.MarshalText()
 			if err != nil {
 				return nil, err
 			}
 			values[i] = &store.Parameter{
 				Value: &store.Parameter_S{
-					S: string(str),
+					S: string(rfc3339),
 				},
 			}
 		case nil:
 			continue
 		default:
-			return nil, fmt.Errorf("unrecognized type: %T", val)
+			return nil, fmt.Errorf("unhandled column type: %T %v", val, val)
 		}
 	}
-
 	return values, nil
+
 }
 
 func isStringType(t string) bool {
@@ -436,6 +441,54 @@ func (eng *Engine) Size() (int64, error) {
 // Serialize returns the database as bytes.
 func (eng *Engine) Serialize() ([]byte, error) {
 	return os.ReadFile(eng.path)
+}
+
+func copyConnection(dst, src *sqlite3.SQLiteConn) error {
+	backup, err := dst.Backup("main", src, "main")
+	if err != nil {
+		return err
+	}
+
+	for {
+		done, err := backup.Step(-1)
+		if err != nil {
+			backup.Finish()
+			return err
+		}
+
+		if done {
+			break
+		}
+
+		time.Sleep(250 * time.Millisecond)
+	}
+	return backup.Finish()
+}
+
+func copyEngine(dst, src *Engine) error {
+	dstConn, err := dst.writeDB.Conn(context.Background())
+	if err != nil {
+		return err
+	}
+	defer dstConn.Close()
+
+	srcConn, err := src.writeDB.Conn(context.Background())
+	if err != nil {
+		return err
+	}
+	defer srcConn.Close()
+
+	var dstSQConn *sqlite3.SQLiteConn
+	backup := func(driverConn interface{}) error {
+		srcSqlite := driverConn.(*sqlite3.SQLiteConn)
+		return copyConnection(dstSQConn, srcSqlite)
+	}
+
+	return dstConn.Raw(
+		func(driverConn interface{}) error {
+			dstSQConn = driverConn.(*sqlite3.SQLiteConn)
+			return srcConn.Raw(backup)
+		})
 }
 
 func (eng *Engine) Stats() (map[string]int64, error) {
