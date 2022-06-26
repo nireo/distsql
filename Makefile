@@ -1,3 +1,5 @@
+CONFIG_PATH=${HOME}/.distsql
+
 .PHONY: compile
 compile:
 	protoc proto/*.proto \
@@ -7,6 +9,18 @@ compile:
 		--go-grpc_opt=paths=source_relative \
 		--proto_path=.
 
+.PHONY: gencert
+gencert:
+	cfssl gencert \
+		-initca test/ca-csr.json | cfssljson -bare ca
+
+	cfssl gencert \
+		-ca=ca.pem \
+		-ca-key=ca-key.pem \
+		-config=test/ca-config.json \
+		-profile=server \
+
+	test/server-csr.json | cfssljson -bare server
 
 .PHONY: test
 test:

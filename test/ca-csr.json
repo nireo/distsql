@@ -1,0 +1,16 @@
+{
+  "CN": "Test CA",
+  "key": {
+    "algo": "rsa",
+    "size": 2048
+  },
+  "names": [
+    {
+      "C": "FI",
+      "L": "Helsinki",
+      "ST": "Uusimaa",
+      "O": "Test organization",
+      "OU": "Ca Services"
+    }
+  ]
+}

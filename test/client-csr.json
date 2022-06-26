@@ -1,0 +1,19 @@
+{
+  "CN": "client",
+  "hosts": [
+    ""
+  ],
+  "key": {
+    "algo": "rsa",
+    "size": 2048
+  },
+  "names": [
+    {
+      "C": "FI",
+      "L": "Helsinki",
+      "ST": "Uusimaa",
+      "O": "Test Organization",
+      "OU": "Distributed Services"
+    }
+  ]
+}
