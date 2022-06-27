@@ -7,116 +7,126 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/nireo/distsql/auth"
 	"github.com/nireo/distsql/config"
 	"github.com/nireo/distsql/engine"
 	store "github.com/nireo/distsql/proto"
 	"github.com/nireo/distsql/proto/encoding"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/status"
 )
 
-type setupFunc = func(*Config)
-
-func setupTest(t *testing.T, fn setupFunc) (
-	client store.StoreClient, cfg *Config, teardown func(),
+func setupTest(t *testing.T, fn func(*Config)) (
+	rootClient store.StoreClient,
+	nobodyClient store.StoreClient,
+	cfg *Config,
+	teardown func(),
 ) {
 	t.Helper()
 
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	newClient := func(crtPath, keyPath string) (
+		*grpc.ClientConn,
+		store.StoreClient,
+		[]grpc.DialOption,
+	) {
+		tlsConfig, err := config.SetupTLSConfig(config.TLSConfig{
+			CertFile: crtPath,
+			KeyFile:  keyPath,
+			CAFile:   config.CAFile,
+			Server:   false,
+		})
+		require.NoError(t, err)
+
+		tlsCreds := credentials.NewTLS(tlsConfig)
+		opts := []grpc.DialOption{grpc.WithTransportCredentials(tlsCreds)}
+		conn, err := grpc.Dial(l.Addr().String(), opts...)
+		require.NoError(t, err)
+		client := store.NewStoreClient(conn)
+
+		return conn, client, opts
 	}
 
-	clientTLSConfig, err := config.SetupTLSConfig(config.TLSConfig{
-		CertFile: config.ClientCertFile,
-		KeyFile:  config.ClientKeyFile,
-		CAFile:   config.CAFile,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	clientCreds := credentials.NewTLS(clientTLSConfig)
-
-	cc, err := grpc.Dial(listener.Addr().String(), grpc.WithTransportCredentials(clientCreds))
-	if err != nil {
-		t.Fatal(err)
-	}
-	client = store.NewStoreClient(cc)
+	var rootConn *grpc.ClientConn
+	rootConn, rootClient, _ = newClient(
+		config.RootClientCertFile,
+		config.RootClientKeyFile,
+	)
+	var nobodyConn *grpc.ClientConn
+	nobodyConn, nobodyClient, _ = newClient(
+		config.NobodyClientCertFile,
+		config.NobodyClientKeyFile,
+	)
 
 	serverTLSConfig, err := config.SetupTLSConfig(config.TLSConfig{
 		CertFile:      config.ServerCertFile,
 		KeyFile:       config.ServerKeyFile,
 		CAFile:        config.CAFile,
-		ServerAddress: listener.Addr().String(),
+		ServerAddress: l.Addr().String(),
 		Server:        true,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	serverCreds := credentials.NewTLS(serverTLSConfig)
 
 	dir, err := ioutil.TempDir("", "server-test-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	dbpath := filepath.Join(dir, "data.db")
+	require.NoError(t, err)
+	dbpath := filepath.Join(dir, "test.db")
 
-	db, err := engine.Open(dbpath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	cdb, err := engine.Open(dbpath)
+	require.NoError(t, err)
 
-	cfg = &Config{
-		db: db,
-	}
-
+	authorizer := auth.New(config.ACLModelFile, config.ACLPolicyFile)
+	cfg = &Config{DB: cdb, Authorizer: authorizer}
 	if fn != nil {
 		fn(cfg)
 	}
-
-	srv, err := NewGRPCServer(cfg, grpc.Creds(serverCreds))
-	if err != nil {
-		t.Fatal(err)
-	}
+	server, err := NewGRPCServer(cfg, grpc.Creds(serverCreds))
+	require.NoError(t, err)
 
 	go func() {
-		srv.Serve(listener)
+		server.Serve(l)
 	}()
 
-	return client, cfg, func() {
-		srv.Stop()
-		cc.Close()
-		listener.Close()
-		db.Close()
+	return rootClient, nobodyClient, cfg, func() {
+		server.Stop()
+		rootConn.Close()
+		nobodyConn.Close()
+		l.Close()
+		cdb.Close()
 	}
 }
 
 func TestServer(t *testing.T) {
 	for scenario, fn := range map[string]func(
 		t *testing.T,
-		client store.StoreClient,
+		rootClient store.StoreClient,
+		nobodyClient store.StoreClient,
 		config *Config,
 	){
 		"execute/query a record into the database": testExecQuery,
 		"table not found":                          testNotFound,
+		"unauthorized access failed":               testUnauthorized,
 	} {
 		t.Run(scenario, func(t *testing.T) {
-			client, config, teardown := setupTest(t, nil)
+			rootClient, nobodyClient, config, teardown := setupTest(t, nil)
 			defer teardown()
-			fn(t, client, config)
+			fn(t, rootClient, nobodyClient, config)
 		})
 	}
 }
 
-func testExecQuery(t *testing.T, client store.StoreClient, config *Config) {
+func testExecQuery(t *testing.T, client, _ store.StoreClient, config *Config) {
 	ctx := context.Background()
-
 	results, err := client.ExecString(ctx, &store.ExecStringReq{
 		Exec: "CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, name TEXT)",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	jsonRes := convertToJSON(results.Results)
 	if jsonRes != "[{}]" {
@@ -126,9 +136,7 @@ func testExecQuery(t *testing.T, client store.StoreClient, config *Config) {
 	query, err := client.QueryString(ctx, &store.QueryStringReq{
 		Query: "SELECT * FROM test",
 	})
-	if err != nil {
-		t.Fatalf("failed reading table: %s", err.Error())
-	}
+	require.NoError(t, err)
 
 	qjson := convertToJSON(query.Results)
 	if qjson != `[{"columns":["id","name"],"types":["integer","text"]}]` {
@@ -136,19 +144,41 @@ func testExecQuery(t *testing.T, client store.StoreClient, config *Config) {
 	}
 }
 
-func testNotFound(t *testing.T, client store.StoreClient, config *Config) {
+func testNotFound(t *testing.T, client, _ store.StoreClient, config *Config) {
 	ctx := context.Background()
 
 	query, err := client.QueryString(ctx, &store.QueryStringReq{
 		Query: "SELECT * FROM test",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	qjson := convertToJSON(query.Results)
 	if qjson != `[{"error":"no such table: test"}]` {
 		t.Fatalf("results don't match: %s", qjson)
+	}
+}
+
+func testUnauthorized(t *testing.T, _, client store.StoreClient, config *Config) {
+	ctx := context.Background()
+
+	exec, err := client.ExecString(ctx, &store.ExecStringReq{
+		Exec: "CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, name TEXT)",
+	})
+	require.Nil(t, exec, "exec response should be nil")
+
+	gotCode, wantCode := status.Code(err), codes.PermissionDenied
+	if gotCode != wantCode {
+		t.Fatalf("got code: %d, want: %d", gotCode, wantCode)
+	}
+
+	query, err := client.QueryString(ctx, &store.QueryStringReq{
+		Query: "SELECT * FROM test",
+	})
+	require.Nil(t, query, "query should be nil")
+
+	gotCode, wantCode = status.Code(err), codes.PermissionDenied
+	if gotCode != wantCode {
+		t.Fatalf("got code: %d, want: %d", gotCode, wantCode)
 	}
 }
 
