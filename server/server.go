@@ -79,8 +79,8 @@ func (s *grpcServer) ExecString(ctx context.Context, req *store.ExecStringReq) (
 	}, nil
 }
 
-func NewGRPCServer(conf *Config) (*grpc.Server, error) {
-	gsrv := grpc.NewServer()
+func NewGRPCServer(conf *Config, opts ...grpc.ServerOption) (*grpc.Server, error) {
+	gsrv := grpc.NewServer(opts...)
 	srv, err := newgrpcServer(conf)
 	if err != nil {
 		return nil, err

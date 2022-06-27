@@ -7,10 +7,12 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/nireo/distsql/config"
 	"github.com/nireo/distsql/engine"
 	store "github.com/nireo/distsql/proto"
 	"github.com/nireo/distsql/proto/encoding"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 type setupFunc = func(*Config)
@@ -20,16 +22,38 @@ func setupTest(t *testing.T, fn setupFunc) (
 ) {
 	t.Helper()
 
-	listener, err := net.Listen("tcp", ":0")
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	opts := []grpc.DialOption{grpc.WithInsecure()}
-	cc, err := grpc.Dial(listener.Addr().String(), opts...)
+	clientTLSConfig, err := config.SetupTLSConfig(config.TLSConfig{
+		CertFile: config.ClientCertFile,
+		KeyFile:  config.ClientKeyFile,
+		CAFile:   config.CAFile,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	clientCreds := credentials.NewTLS(clientTLSConfig)
+
+	cc, err := grpc.Dial(listener.Addr().String(), grpc.WithTransportCredentials(clientCreds))
+	if err != nil {
+		t.Fatal(err)
+	}
+	client = store.NewStoreClient(cc)
+
+	serverTLSConfig, err := config.SetupTLSConfig(config.TLSConfig{
+		CertFile:      config.ServerCertFile,
+		KeyFile:       config.ServerKeyFile,
+		CAFile:        config.CAFile,
+		ServerAddress: listener.Addr().String(),
+		Server:        true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverCreds := credentials.NewTLS(serverTLSConfig)
 
 	dir, err := ioutil.TempDir("", "server-test-")
 	if err != nil {
@@ -50,7 +74,7 @@ func setupTest(t *testing.T, fn setupFunc) (
 		fn(cfg)
 	}
 
-	srv, err := NewGRPCServer(cfg)
+	srv, err := NewGRPCServer(cfg, grpc.Creds(serverCreds))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +83,6 @@ func setupTest(t *testing.T, fn setupFunc) (
 		srv.Serve(listener)
 	}()
 
-	client = store.NewStoreClient(cc)
 	return client, cfg, func() {
 		srv.Stop()
 		cc.Close()
