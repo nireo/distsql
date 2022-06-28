@@ -3,12 +3,15 @@ package consensus
 import (
 	"bytes"
 	"crypto/tls"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/raft"
@@ -48,6 +51,8 @@ type Consensus struct {
 	raft    *raft.Raft
 	log     *zap.Logger
 	db      *engine.Engine
+	dbPath  string
+	txmu    *sync.RWMutex
 }
 
 type snapshot struct {
@@ -200,11 +205,39 @@ func (c *Consensus) Apply(record *raft.Log) interface{} {
 }
 
 func (c *Consensus) Restore(rc io.ReadCloser) error {
+	start := time.Now()
+
+	bytes, err := snapshotToBytes(rc)
+	if err != nil {
+		return fmt.Errorf("restore failed: %s", err)
+	}
+
+	if bytes == nil {
+		c.log.Info("no database found in snapshot")
+	}
+
+	if err := c.db.Close(); err != nil {
+		return fmt.Errorf("failed to close pre-restore database: %s", err)
+	}
+
+	db, err := createDiskDatabase(bytes, c.dbPath)
+	if err != nil {
+		return fmt.Errorf("cannot open disk database %s", err)
+	}
+	c.db = db
+	c.log.Info(fmt.Sprintf("node restoration took: %s", time.Since(start)))
 	return nil
 }
 
 func (c *Consensus) Snapshot() (raft.FSMSnapshot, error) {
-	return nil, nil
+	// stop query transactions while this is running
+	c.txmu.Lock()
+	defer c.txmu.Unlock()
+
+	snap := newSnapshot(c.db)
+	c.log.Info(fmt.Sprintf("node snapshot created in %s", time.Since(snap.created)))
+
+	return snap, nil
 }
 
 func (c *Consensus) IsLeader() bool {
@@ -289,4 +322,40 @@ func (c *Consensus) WaitForLeader(timeout time.Duration) error {
 			}
 		}
 	}
+}
+
+func snapshotToBytes(rc io.ReadCloser) ([]byte, error) {
+	var offset int64
+	b, err := ioutil.ReadAll(rc)
+	if err != nil {
+		return nil, fmt.Errorf("read all error: %s", err)
+	}
+
+	var size uint64
+	if err := binary.Read(bytes.NewReader(b[offset:offset+8]), binary.LittleEndian, &size); err != nil {
+		return nil, fmt.Errorf("binary read error: %s", err)
+	}
+	offset += 8
+
+	var res []byte
+	if size > 0 {
+		res = b[offset : offset+int64(size)]
+	} else {
+		res = nil
+	}
+	return res, nil
+}
+
+func createDiskDatabase(b []byte, path string) (*engine.Engine, error) {
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+
+	if b != nil {
+		if err := ioutil.WriteFile(path, b, 0660); err != nil {
+			return nil, err
+		}
+	}
+
+	return engine.Open(path)
 }
