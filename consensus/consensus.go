@@ -238,3 +238,55 @@ func (c *Consensus) GetServers() ([]*store.Server, error) {
 
 	return servers, nil
 }
+
+func (c *Consensus) Join(id, addr string) error {
+	future := c.raft.GetConfiguration()
+	if err := future.Error(); err != nil {
+		return err
+	}
+
+	// convert types
+	serverID := raft.ServerID(id)
+	serverAddr := raft.ServerAddress(addr)
+
+	for _, srv := range future.Configuration().Servers {
+		if srv.ID == serverID || srv.Address == serverAddr {
+			if srv.ID == serverID && srv.Address == serverAddr {
+				return nil
+			}
+
+			removeFuture := c.raft.RemoveServer(serverID, 0, 0)
+			if err := removeFuture.Error(); err != nil {
+				return err
+			}
+		}
+	}
+
+	addFuture := c.raft.AddVoter(serverID, serverAddr, 0, 0)
+	if err := addFuture.Error(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Consensus) Leave(id string) error {
+	removeFuture := c.raft.RemoveServer(raft.ServerID(id), 0, 0)
+	return removeFuture.Error()
+}
+
+func (c *Consensus) WaitForLeader(timeout time.Duration) error {
+	timeoutc := time.After(timeout)
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-timeoutc:
+			return fmt.Errorf("timed out")
+		case <-ticker.C:
+			if l := c.raft.Leader(); l != "" {
+				return nil
+			}
+		}
+	}
+}
