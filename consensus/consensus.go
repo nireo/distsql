@@ -14,6 +14,7 @@ import (
 	"github.com/hashicorp/raft"
 	raftboltdb "github.com/hashicorp/raft-boltdb"
 	"github.com/nireo/distsql/engine"
+	store "github.com/nireo/distsql/proto"
 	"go.uber.org/zap"
 )
 
@@ -204,4 +205,36 @@ func (c *Consensus) Restore(rc io.ReadCloser) error {
 
 func (c *Consensus) Snapshot() (raft.FSMSnapshot, error) {
 	return nil, nil
+}
+
+func (c *Consensus) IsLeader() bool {
+	return c.raft.State() == raft.Leader
+}
+
+// Close closes the raft node and it also closes the database connections
+func (c *Consensus) Close() error {
+	future := c.raft.Shutdown()
+	if err := future.Error(); err != nil {
+		return err
+	}
+
+	return c.db.Close()
+}
+
+func (c *Consensus) GetServers() ([]*store.Server, error) {
+	future := c.raft.GetConfiguration()
+	if err := future.Error(); err != nil {
+		return nil, err
+	}
+
+	var servers []*store.Server
+	for _, server := range future.Configuration().Servers {
+		servers = append(servers, &store.Server{
+			Id:       string(server.ID),
+			RpcAddr:  string(server.Address),
+			IsLeader: c.raft.Leader() == server.Address,
+		})
+	}
+
+	return servers, nil
 }

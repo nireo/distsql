@@ -63,6 +63,18 @@ message QueryStringReq {
   string query = 1;
 }
 
+message Server {
+  string id = 1;
+  string rpc_addr = 2;
+  bool is_leader = 3;
+}
+
+message GetServerRequest {}
+
+message GetServerResponse {
+  repeated Server servers = 1;
+}
+
 service Store {
   rpc Execute(Request) returns (StoreExecResponse) {}
   rpc Query(QueryReq) returns (StoreQueryResponse) {}
