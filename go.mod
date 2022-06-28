@@ -14,6 +14,11 @@ require (
 )
 
 require (
+	github.com/boltdb/bolt v1.3.1 // indirect
+	github.com/hashicorp/raft-boltdb v0.0.0-20220329195025-15018e9b97e0 // indirect
+)
+
+require (
 	github.com/Knetic/govaluate v3.0.1-0.20171022003610-9aa49832a739+incompatible // indirect
 	github.com/armon/go-metrics v0.4.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
