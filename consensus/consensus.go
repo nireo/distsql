@@ -19,6 +19,7 @@ import (
 	"github.com/nireo/distsql/engine"
 	store "github.com/nireo/distsql/proto"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/proto"
 )
 
 type RequestType uint8
@@ -201,6 +202,43 @@ func (c *Consensus) setupRaft(dataDir string) error {
 }
 
 func (c *Consensus) Apply(record *raft.Log) interface{} {
+	buffer := record.Data
+	ty := RequestType(buffer[0])
+
+	switch ty {
+	case ExecRequest:
+		return nil
+	default:
+		panic("unrecognized apply type")
+	}
+}
+
+func (c *Consensus) applyAction(data []byte, dbPtr **engine.Engine) interface{} {
+	var ac store.Action
+	db := *dbPtr
+
+	if err := proto.Unmarshal(data, &ac); err != nil {
+		panic("failed to unmarshal cluster command")
+	}
+
+	switch ac.Type {
+	case store.Action_ACTION_EXECUTE:
+		var execAc store.Request
+		if err := proto.Unmarshal(ac.Body, &execAc); err != nil {
+			panic("failed to unmarshal execute request")
+		}
+		_, err := db.Exec(&execAc)
+		return err
+	case store.Action_ACTION_QUERY:
+		var execAc store.QueryReq
+		if err := proto.Unmarshal(ac.Body, &execAc); err != nil {
+			panic("failed to unmarshal execute request")
+		}
+		_, err := db.Query(execAc.Request)
+		return err
+	case store.Action_ACTION_NO:
+		return nil
+	}
 	return nil
 }
 

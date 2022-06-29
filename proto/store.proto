@@ -82,3 +82,13 @@ service Store {
   rpc ExecString(ExecStringReq) returns (StoreExecResponse) {}
   rpc QueryString(QueryStringReq) returns (StoreQueryResponse) {}
 }
+
+message Action {
+  enum Type {
+    ACTION_QUERY = 0;
+    ACTION_EXECUTE = 1;
+    ACTION_NO = 2;
+  }
+  Type type = 1;
+  bytes body = 2;
+}
