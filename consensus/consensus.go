@@ -149,6 +149,33 @@ func (s *StreamLayer) Addr() net.Addr {
 	return s.listener.Addr()
 }
 
+func NewDB(dataDir string, config *Config) (*Consensus, error) {
+	c := &Consensus{
+		config: config,
+	}
+
+	if err := c.setupDB(dataDir); err != nil {
+		return nil, err
+	}
+
+	if err := c.setupRaft(dataDir); err != nil {
+		return nil, err
+	}
+
+	return c, nil
+}
+
+func (c *Consensus) setupDB(dataDir string) error {
+	dbDir := filepath.Join(dataDir, "db")
+	if err := os.MkdirAll(dbDir, 0755); err != nil {
+		return err
+	}
+
+	var err error
+	c.db, err = engine.Open(filepath.Join(dbDir, "sqlite.db"))
+	return err
+}
+
 func (c *Consensus) setupRaft(dataDir string) error {
 	if err := os.Mkdir(filepath.Join(dataDir, "raft"), os.ModePerm); err != nil {
 		return err
