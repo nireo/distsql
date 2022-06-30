@@ -292,13 +292,43 @@ func (c *Consensus) Exec(req *store.Request) ([]*store.ExecRes, error) {
 	return fsmRes.res, fsmRes.error
 }
 
-func (c *Consensus) Query(q *store.Request) ([]*store.QueryRes, error) {
-	if q.Transaction {
+func (c *Consensus) Query(q *store.QueryReq) ([]*store.QueryRes, error) {
+	if q.StrongConsistency {
+		// query from the leader ensuring that entries are up-to-date
+		if !c.IsLeader() {
+			return nil, ErrNotLeader
+		}
+
+		b, err := proto.Marshal(q)
+		if err != nil {
+			return nil, err
+		}
+
+		action := &store.Action{
+			Type: store.Action_ACTION_QUERY,
+			Body: b,
+		}
+
+		b, err = proto.Marshal(action)
+		if err != nil {
+			return nil, err
+		}
+
+		future := c.raft.Apply(b, 10*time.Second).(raft.ApplyFuture)
+		if future.Error() != nil {
+			return nil, future.Error()
+		}
+
+		res := future.Response().(*queryResponse)
+		return res.res, res.error
+	}
+
+	if q.Request.Transaction {
 		c.txmu.RLock()
 		defer c.txmu.RUnlock()
 	}
 
-	return c.db.Query(q)
+	return c.db.Query(q.Request)
 }
 
 func (c *Consensus) Restore(rc io.ReadCloser) error {

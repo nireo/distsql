@@ -28,6 +28,7 @@ message Request {
 // Same fields as request for now, but in the future it might change.
 message QueryReq {
   Request request = 1;
+  bool strong_consistency = 2;
 }
 
 message Values {
