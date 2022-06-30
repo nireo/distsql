@@ -30,6 +30,10 @@ const (
 	RaftRPC int = 1
 )
 
+var (
+	ErrNotLeader = errors.New("not raft leader")
+)
+
 type Config struct {
 	Raft struct {
 		raft.Config
@@ -68,6 +72,16 @@ func newSnapshot(db *engine.Engine) *snapshot {
 		created:  time.Now(),
 		database: data,
 	}
+}
+
+type execResponse struct {
+	res   []*store.ExecRes
+	error error
+}
+
+type queryResponse struct {
+	res   []*store.QueryRes
+	error error
 }
 
 func (snapshot *snapshot) Persist(sink raft.SnapshotSink) error {
@@ -202,15 +216,7 @@ func (c *Consensus) setupRaft(dataDir string) error {
 }
 
 func (c *Consensus) Apply(record *raft.Log) interface{} {
-	buffer := record.Data
-	ty := RequestType(buffer[0])
-
-	switch ty {
-	case ExecRequest:
-		return nil
-	default:
-		panic("unrecognized apply type")
-	}
+	return c.applyAction(record.Data, &c.db)
 }
 
 func (c *Consensus) applyAction(data []byte, dbPtr **engine.Engine) interface{} {
@@ -227,19 +233,72 @@ func (c *Consensus) applyAction(data []byte, dbPtr **engine.Engine) interface{} 
 		if err := proto.Unmarshal(ac.Body, &execAc); err != nil {
 			panic("failed to unmarshal execute request")
 		}
-		_, err := db.Exec(&execAc)
-		return err
+		res, err := db.Exec(&execAc)
+		return &execResponse{res: res, error: err}
 	case store.Action_ACTION_QUERY:
 		var execAc store.QueryReq
 		if err := proto.Unmarshal(ac.Body, &execAc); err != nil {
 			panic("failed to unmarshal execute request")
 		}
-		_, err := db.Query(execAc.Request)
-		return err
+		res, err := db.Query(execAc.Request)
+		return &queryResponse{res: res, error: err}
 	case store.Action_ACTION_NO:
 		return nil
 	}
 	return nil
+}
+
+func (c *Consensus) apply(ty store.Action_Type, data proto.Message) (interface{}, error) {
+	messageBytes, err := proto.Marshal(data)
+	if err != nil {
+		return nil, err
+	}
+
+	action := &store.Action{
+		Type: ty,
+		Body: messageBytes,
+	}
+
+	encodedAction, err := proto.Marshal(action)
+	if err != nil {
+		return nil, err
+	}
+
+	timeout := 10 * time.Second
+	future := c.raft.Apply(encodedAction, timeout)
+	if future.Error() != nil {
+		return nil, future.Error()
+	}
+
+	res := future.Response()
+	if err, ok := res.(error); ok {
+		return nil, err
+	}
+
+	return res, nil
+}
+
+func (c *Consensus) Exec(req *store.Request) ([]*store.ExecRes, error) {
+	if !c.IsLeader() {
+		return nil, ErrNotLeader
+	}
+
+	res, err := c.apply(store.Action_ACTION_EXECUTE, req)
+	if err != nil {
+		return nil, err
+	}
+
+	fsmRes := res.(*execResponse)
+	return fsmRes.res, fsmRes.error
+}
+
+func (c *Consensus) Query(q *store.Request) ([]*store.QueryRes, error) {
+	if q.Transaction {
+		c.txmu.RLock()
+		defer c.txmu.RUnlock()
+	}
+
+	return c.db.Query(q)
 }
 
 func (c *Consensus) Restore(rc io.ReadCloser) error {
