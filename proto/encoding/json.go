@@ -17,10 +17,10 @@ type Result struct {
 }
 
 type EncQueryRes struct {
-	Columns []string `json:"columns,omitempty"`
-	Types   []string `json:"types,omitempty"`
-	Values  [][]any  `json:"values,omitempty"`
-	Error   string   `json:"error,omitempty"`
+	Columns []string        `json:"columns,omitempty"`
+	Types   []string        `json:"types,omitempty"`
+	Values  [][]interface{} `json:"values,omitempty"`
+	Error   string          `json:"error,omitempty"`
 }
 
 func convertExecuteResult(res *store.ExecRes) *Result {
@@ -32,41 +32,42 @@ func convertExecuteResult(res *store.ExecRes) *Result {
 	}
 }
 
-func convertValues(dst [][]any, v []*store.Values) error {
-	for i := range v {
-		if v[i] == nil {
-			dst[i] = nil
+func convertValues(dest [][]interface{}, v []*store.Values) error {
+	for n := range v {
+		vals := v[n]
+		if vals == nil {
+			dest[n] = nil
 			continue
 		}
 
-		params := v[i].GetParams()
+		params := vals.GetParams()
 		if params == nil {
-			dst[i] = nil
+			dest[n] = nil
 			continue
 		}
 
-		values := make([]interface{}, len(params))
+		rowValues := make([]interface{}, len(params))
 		for p := range params {
-			switch pv := params[p].GetValue().(type) {
+			switch w := params[p].GetValue().(type) {
 			case *store.Parameter_I:
-				values[i] = pv.I
+				rowValues[p] = w.I
 			case *store.Parameter_D:
-				values[i] = pv.D
-			case *store.Parameter_S:
-				values[i] = pv.S
+				rowValues[p] = w.D
 			case *store.Parameter_B:
-				values[i] = pv.B
+				rowValues[p] = w.B
 			case *store.Parameter_Y:
-				values[i] = pv.Y
+				rowValues[p] = w.Y
+			case *store.Parameter_S:
+				rowValues[p] = w.S
 			case nil:
-				values[i] = nil
+				rowValues[p] = nil
 			default:
-				return fmt.Errorf("unrecognized parameter type: %T", pv)
+				return fmt.Errorf("unsupported parameter type at index %d: %T", p, w)
 			}
 		}
-
-		dst[i] = values
+		dest[n] = rowValues
 	}
+
 	return nil
 }
 

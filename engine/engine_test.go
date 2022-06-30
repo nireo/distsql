@@ -131,37 +131,37 @@ func TestSimpleUsage(t *testing.T) {
 		t.Fatalf("failed to create engine")
 	}
 
-	_, err = db.ExecString("CREATE TABLE foo (id INTEGER NOT NULL PRIMARY KEY, name TEXT)")
+	_, err = db.ExecString("CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, name TEXT)")
 	if err != nil {
 		t.Fatalf("failed to create table: %s", err.Error())
 	}
 
-	_, err = db.ExecString(`INSERT INTO foo(name) VALUES("fiona")`)
+	_, err = db.ExecString(`INSERT INTO test(name) VALUES("atest")`)
 	if err != nil {
 		t.Fatalf("failed to insert record: %s", err.Error())
 	}
 
-	_, err = db.ExecString(`INSERT INTO foo(name) VALUES("aoife")`)
+	_, err = db.ExecString(`INSERT INTO test(name) VALUES("btest")`)
 	if err != nil {
 		t.Fatalf("failed to insert record: %s", err.Error())
 	}
 
-	r, err := db.QueryString(`SELECT * FROM foo`)
+	r, err := db.QueryString(`SELECT * FROM test`)
 	if err != nil {
 		t.Fatalf("failed to query table: %s", err.Error())
 	}
-	if exp, got := `[{"columns":["id","name"],"types":["integer","text"],"values":[[1,"fiona"],[2,"aoife"]]}]`, convertToJSON(r); exp != got {
+
+	if exp, got := `[{"columns":["id","name"],"types":["integer","text"],"values":[[1,"atest"],[2,"btest"]]}]`, convertToJSON(r); exp != got {
 		t.Fatalf("unexpected results for query\nexp: %s\ngot: %s", exp, got)
 	}
 
-	r, err = db.QueryString(`SELECT * FROM foo WHERE name="aoife"`)
+	r, err = db.QueryString(`SELECT * FROM test WHERE name="btest"`)
 	if err != nil {
 		t.Fatalf("failed to query table: %s", err.Error())
 	}
-	if exp, got := `[{"columns":["id","name"],"types":["integer","text"],"values":[[2,"aoife"]]}]`, convertToJSON(r); exp != got {
+	if exp, got := `[{"columns":["id","name"],"types":["integer","text"],"values":[[2,"btest"]]}]`, convertToJSON(r); exp != got {
 		t.Fatalf("unexpected results for query\nexp: %s\ngot: %s", exp, got)
 	}
-
 }
 
 func convertToJSON(a any) string {
