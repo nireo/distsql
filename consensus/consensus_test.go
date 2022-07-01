@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/hashicorp/raft"
+	store "github.com/nireo/distsql/proto"
+	"github.com/nireo/distsql/proto/encoding"
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,7 +29,7 @@ func getFreePort() (int, error) {
 	return l.Addr().(*net.TCPAddr).Port, nil
 }
 
-func TestSetupNodes(t *testing.T) {
+func TestSimpleUsage(t *testing.T) {
 	var dbs []*Consensus
 	var err error
 	nodeCount := 3
@@ -75,17 +77,111 @@ func TestSetupNodes(t *testing.T) {
 		dbs = append(dbs, db)
 	}
 
-	// executes := &store.Request{
-	//	Statements: []*store.Statement{
-	//		{
-	//			Sql: "CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, name TEXT)",
-	//		},
-	//		{
-	//			Sql: `INSERT INTO foo(name) VALUES("aoife")`,
-	//		},
-	//		{
-	//			Sql: `INSERT INTO foo(name) VALUSE("fiona)`,
-	//		},
-	//	},
-	// }
+	executes := &store.Request{
+		Statements: []*store.Statement{
+			{
+				Sql: "CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, name TEXT)",
+			},
+			{
+				Sql: `INSERT INTO test(name) VALUES("atest")`,
+			},
+			{
+				Sql: `INSERT INTO test(name) VALUES("btest")`,
+			},
+		},
+	}
+
+	_, err = dbs[0].Exec(executes)
+	require.NoError(t, err)
+
+	type queryWanted struct {
+		query        string
+		wantedOutput string
+	}
+
+	queries := []queryWanted{
+		{
+			query:        `SELECT * FROM test`,
+			wantedOutput: `[{"columns":["id","name"],"types":["integer","text"],"values":[[1,"atest"],[2,"btest"]]}]`,
+		},
+		{
+			query:        `SELECT * FROM test WHERE name="atest"`,
+			wantedOutput: `[{"columns":["id","name"],"types":["integer","text"],"values":[[1,"atest"]]}]`,
+		},
+		{
+			query:        `SELECT * FROM test WHERE name="btest"`,
+			wantedOutput: `[{"columns":["id","name"],"types":["integer","text"],"values":[[2,"btest"]]}]`,
+		},
+	}
+
+	for _, q := range queries {
+		require.Eventually(t, func() bool {
+			for j := 0; j < nodeCount; j++ {
+				r, err := dbs[j].Query(&store.QueryReq{
+					StrongConsistency: false, // don't query everything from the leader
+					Request: &store.Request{
+						Statements: []*store.Statement{
+							{Sql: q.query},
+						},
+					},
+				})
+				if err != nil {
+					return false
+				}
+
+				if r == nil {
+					return false
+				}
+
+				js := convertToJSON(r)
+				if got, want := js, q.wantedOutput; got != want {
+					fmt.Printf("On query: %s | Node: %d\n\twanted: %s\n\tgot:%s\n", q.query, j, want, got)
+					return false
+				}
+			}
+			return true
+		}, 3*time.Second, 150*time.Millisecond)
+	}
+
+	err = dbs[0].Leave("1")
+	require.NoError(t, err)
+	time.Sleep(50 * time.Millisecond)
+
+	executes = &store.Request{
+		Statements: []*store.Statement{
+			{
+				Sql: `INSERT INTO test(name) VALUES("ctest")`,
+			},
+		},
+	}
+	_, err = dbs[0].Exec(executes)
+	require.NoError(t, err)
+
+	time.Sleep(50 * time.Millisecond)
+
+	qr := &store.QueryReq{
+		StrongConsistency: false,
+		Request: &store.Request{
+			Statements: []*store.Statement{
+				{
+					Sql: `SELECT * FROM test WHERE name="ctest"`,
+				},
+			},
+		},
+	}
+
+	rr, err := dbs[1].Query(qr)
+	require.Equal(t, len(rr[0].Values), 0)
+
+	rr, err = dbs[2].Query(qr)
+	require.Equal(t, len(rr[0].Values), 1)
+}
+
+func convertToJSON(a any) string {
+	j, err := encoding.ProtoToJSON(a)
+	if err != nil {
+		return ""
+	}
+
+	return string(j)
 }
