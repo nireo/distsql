@@ -3,11 +3,14 @@ package service
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net"
 	"net/http"
+	"strings"
 
+	"github.com/nireo/distsql/consensus"
 	store "github.com/nireo/distsql/proto"
 	"go.uber.org/zap"
 )
@@ -18,7 +21,7 @@ type Store interface {
 	Query(req *store.QueryReq) ([]*store.QueryRes, error)
 	LeaderAddr() string
 	Join(id, addr string) error
-	Remove(id string) error
+	Leave(id string) error
 	GetServers() ([]*store.Server, error)
 }
 
@@ -122,4 +125,92 @@ func createTLS(certFile, keyFile, caFile string) (*tls.Config, error) {
 }
 
 func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	switch {
+	case strings.HasPrefix(r.URL.Path, "/join"):
+		s.join(w, r)
+	case strings.HasPrefix(r.URL.Path, "/leave"):
+		s.leave(w, r)
+	}
+}
+
+func (s *Service) join(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	b, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	jsonMap := make(map[string]interface{})
+	if err := json.Unmarshal(b, &jsonMap); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	id, ok := jsonMap["id"]
+	if !ok {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	addr, ok := jsonMap["addr"]
+	if !ok {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	if err := s.store.Join(id.(string), addr.(string)); err != nil {
+		if err == consensus.ErrNotLeader {
+			// TODO: redirect to leader
+		}
+
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
+func (s *Service) leave(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	b, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	jsonMap := make(map[string]interface{})
+	if err := json.Unmarshal(b, &jsonMap); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	id, ok := jsonMap["id"]
+	if !ok {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	if err := s.store.Leave(id.(string)); err != nil {
+		if err == consensus.ErrNotLeader {
+			// TODO: redirect to leader
+		}
+
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+}
+
+func (s *Service) redirectAddr(r *http.Request, url string) string {
+	rq := r.URL.RawQuery
+	if rq != "" {
+		rq = fmt.Sprintf("?%s", rq)
+	}
+	return fmt.Sprintf("%s%s%s", url, r.URL.Path, rq)
 }
