@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -38,6 +39,16 @@ type Service struct {
 	KeyFile  string
 
 	log *zap.Logger
+}
+
+type DBResponse struct {
+	ExecRes  []*store.ExecRes
+	QueryRes []*store.QueryRes
+}
+
+type DataResponse struct {
+	Results *DBResponse `json:"results,omitempty"`
+	Error   string      `json:"error,omitempty"`
 }
 
 func NewService(addr string, store Store) (*Service, error) {
@@ -207,10 +218,77 @@ func (s *Service) leave(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Service) execHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	b, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	r.Body.Close()
+
+	statements, err := parseStatements(b)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	req := &store.Request{
+		Statements: statements,
+	}
+
+	response := &DataResponse{
+		Results: &DBResponse{},
+	}
+
+	res, err := s.store.Execute(req)
+	if err != nil {
+		response.Error = err.Error()
+	} else {
+		response.Results.ExecRes = res
+	}
+
+	b, err = json.Marshal(response)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	_, err = w.Write(b)
+	if err != nil {
+		s.log.Info("response write failed", zap.Error(err))
+	}
+}
+
 func (s *Service) redirectAddr(r *http.Request, url string) string {
 	rq := r.URL.RawQuery
 	if rq != "" {
 		rq = fmt.Sprintf("?%s", rq)
 	}
 	return fmt.Sprintf("%s%s%s", url, r.URL.Path, rq)
+}
+
+func parseStatements(b []byte) ([]*store.Statement, error) {
+	var statements []string
+
+	if err := json.Unmarshal(b, &statements); err == nil {
+		if len(statements) == 0 {
+			return nil, errors.New("no statements")
+		}
+
+		res := make([]*store.Statement, len(statements))
+		for i, s := range statements {
+			res[i] = &store.Statement{
+				Sql: s,
+			}
+		}
+		return res, nil
+	}
+	return nil, errors.New("couldn't parse statements")
 }
