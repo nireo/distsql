@@ -159,6 +159,7 @@ func TestSimpleUsage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to query table: %s", err.Error())
 	}
+
 	if exp, got := `[{"columns":["id","name"],"types":["integer","text"],"values":[[2,"btest"]]}]`, convertToJSON(r); exp != got {
 		t.Fatalf("unexpected results for query\nexp: %s\ngot: %s", exp, got)
 	}

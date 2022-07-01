@@ -32,6 +32,7 @@ const (
 
 var (
 	ErrNotLeader = errors.New("not raft leader")
+	ErrJoinSelf  = errors.New("trying to join self")
 )
 
 type Config struct {
@@ -159,6 +160,12 @@ func NewDB(dataDir string, config *Config) (*Consensus, error) {
 	}
 
 	if err := c.setupRaft(dataDir); err != nil {
+		return nil, err
+	}
+
+	var err error
+	c.log, err = zap.NewProduction()
+	if err != nil {
 		return nil, err
 	}
 
@@ -427,18 +434,29 @@ func (c *Consensus) GetServers() ([]*store.Server, error) {
 }
 
 func (c *Consensus) Join(id, addr string) error {
-	future := c.raft.GetConfiguration()
-	if err := future.Error(); err != nil {
-		return err
+	c.log.Info("request to join node", zap.String("id", id), zap.String("addr", addr))
+
+	if !c.IsLeader() {
+		return ErrNotLeader
 	}
 
 	// convert types
 	serverID := raft.ServerID(id)
 	serverAddr := raft.ServerAddress(addr)
 
+	if serverID == c.config.Raft.LocalID {
+		return ErrJoinSelf
+	}
+
+	future := c.raft.GetConfiguration()
+	if err := future.Error(); err != nil {
+		return err
+	}
+
 	for _, srv := range future.Configuration().Servers {
 		if srv.ID == serverID || srv.Address == serverAddr {
 			if srv.ID == serverID && srv.Address == serverAddr {
+				c.log.Info("node already in cluster")
 				return nil
 			}
 
@@ -453,6 +471,8 @@ func (c *Consensus) Join(id, addr string) error {
 	if err := addFuture.Error(); err != nil {
 		return err
 	}
+
+	c.log.Info("node joined the cluster", zap.String("id", id), zap.String("addr", addr))
 	return nil
 }
 
@@ -512,4 +532,8 @@ func createDiskDatabase(b []byte, path string) (*engine.Engine, error) {
 	}
 
 	return engine.Open(path)
+}
+
+func (c *Consensus) LeaderAddr() string {
+	return string(c.raft.Leader())
 }
