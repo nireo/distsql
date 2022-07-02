@@ -146,6 +146,10 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.join(w, r)
 	case strings.HasPrefix(r.URL.Path, "/leave"):
 		s.leave(w, r)
+	case strings.HasPrefix(r.URL.Path, "/execute"):
+		s.execHandler(w, r)
+	default:
+		w.WriteHeader(http.StatusNotFound)
 	}
 }
 
@@ -386,4 +390,12 @@ func constructParam(name string, val any) (*store.Parameter, error) {
 	}
 
 	return nil, errors.New("unrecognized type. Valid types: int, float, byte, string, bool")
+}
+
+func (s *Service) IsHTTPS() bool {
+	return s.KeyFile != "" && s.CertFile != ""
+}
+
+func (s *Service) Addr() net.Addr {
+	return s.listener.Addr()
 }
