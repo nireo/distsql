@@ -16,6 +16,11 @@ import (
 	"go.uber.org/zap"
 )
 
+var (
+	ErrBadJson = errors.New("bad json couldn't be parsed properly")
+	ErrEmpty   = errors.New("no statements were provided")
+)
+
 // Store represents a raft store.
 type Store interface {
 	Execute(req *store.Request) ([]*store.ExecRes, error)
@@ -276,19 +281,109 @@ func (s *Service) redirectAddr(r *http.Request, url string) string {
 
 func parseStatements(b []byte) ([]*store.Statement, error) {
 	var statements []string
-
-	if err := json.Unmarshal(b, &statements); err == nil {
+	err := json.Unmarshal(b, &statements)
+	if err == nil {
 		if len(statements) == 0 {
-			return nil, errors.New("no statements")
+			return nil, ErrEmpty
 		}
 
 		res := make([]*store.Statement, len(statements))
-		for i, s := range statements {
+		for i := range statements {
 			res[i] = &store.Statement{
-				Sql: s,
+				Sql: statements[i],
 			}
 		}
+
 		return res, nil
 	}
-	return nil, errors.New("couldn't parse statements")
+
+	var withParams [][]interface{}
+	if err := json.Unmarshal(b, &withParams); err != nil {
+		return nil, ErrBadJson
+	}
+
+	res := make([]*store.Statement, len(withParams))
+	for i := range withParams {
+		if len(withParams[i]) == 0 {
+			return nil, ErrEmpty
+		}
+
+		sql, ok := withParams[i][0].(string)
+		if !ok {
+			return nil, ErrBadJson
+		}
+
+		res[i] = &store.Statement{
+			Sql:    sql,
+			Params: nil,
+		}
+
+		if len(withParams[i]) == 1 {
+			continue
+		}
+
+		res[i].Params = make([]*store.Parameter, 0)
+		for j := range withParams[i][1:] {
+			m, ok := withParams[i][j+1].(map[string]any)
+			if ok {
+				for k, v := range m {
+					param, err := constructParam(k, v)
+					if err != nil {
+						return nil, err
+					}
+					res[i].Params = append(res[i].Params, param)
+				}
+			} else {
+				param, err := constructParam("", withParams[i][j+1])
+				if err != nil {
+					return nil, err
+				}
+				res[i].Params = append(res[i].Params, param)
+			}
+		}
+	}
+	return res, nil
+}
+
+func constructParam(name string, val any) (*store.Parameter, error) {
+	switch v := val.(type) {
+	case int:
+	case int64:
+		return &store.Parameter{
+			Value: &store.Parameter_I{
+				I: v,
+			},
+			Name: name,
+		}, nil
+	case float64:
+		return &store.Parameter{
+			Value: &store.Parameter_D{
+				D: v,
+			},
+			Name: name,
+		}, nil
+	case bool:
+		return &store.Parameter{
+			Value: &store.Parameter_B{
+				B: v,
+			},
+			Name: name,
+		}, nil
+	case []byte:
+		return &store.Parameter{
+			Value: &store.Parameter_Y{
+				Y: v,
+			},
+			Name: name,
+		}, nil
+	case string:
+		return &store.Parameter{
+			Value: &store.Parameter_S{
+				S: v,
+			},
+			Name: name,
+		}, nil
+	}
+
+	return nil, errors.New("unrecognized type. Valid types: int, float, byte, string, bool")
 }
