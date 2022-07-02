@@ -511,3 +511,7 @@ func (eng *Engine) Stats() (map[string]int64, error) {
 
 	return ms, nil
 }
+
+func (eng *Engine) Copy(dst *Engine) error {
+	return copyEngine(dst, eng)
+}

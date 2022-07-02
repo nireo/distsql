@@ -7,7 +7,9 @@ import (
 	"testing"
 
 	"github.com/nireo/distsql/engine"
+	store "github.com/nireo/distsql/proto"
 	"github.com/nireo/distsql/proto/encoding"
+	"github.com/stretchr/testify/require"
 )
 
 func createTestEngine(t *testing.T) (*engine.Engine, error) {
@@ -172,4 +174,99 @@ func convertToJSON(a any) string {
 	}
 
 	return string(j)
+}
+
+func TestCopy(t *testing.T) {
+	src, err := createTestEngine(t)
+	if err != nil {
+		t.Fatalf("failed to create engine")
+	}
+
+	_, err = src.ExecString("CREATE TABLE foo(id INTEGER NOT NULL PRIMARY KEY, name TEXT)")
+	require.NoError(t, err)
+
+	req := &store.Request{
+		Transaction: true,
+		Statements: []*store.Statement{
+			{
+				Sql: `INSERT INTO foo(id, name) VALUES(1, "test")`,
+			},
+			{
+				Sql: `INSERT INTO foo(id, name) VALUES(2, "test")`,
+			},
+			{
+				Sql: `INSERT INTO foo(id, name) VALUES(3, "test")`,
+			},
+			{
+				Sql: `INSERT INTO foo(id, name) VALUES(4, "test")`,
+			},
+		},
+	}
+
+	_, err = src.Exec(req)
+	require.NoError(t, err)
+
+	dst, err := createTestEngine(t)
+	require.NoError(t, err)
+
+	err = src.Copy(dst)
+	require.NoError(t, err)
+
+	res, err := dst.QueryString(`SELECT * FROM foo`)
+
+	if exp, got := `[{"columns":["id","name"],"types":["integer","text"],"values":[[1,"test"],[2,"test"],[3,"test"],[4,"test"]]}]`, convertToJSON(res); exp != got {
+		t.Fatalf("unexpected results for query\nexp: %s\ngot: %s", exp, got)
+	}
+}
+
+func TestSerialize(t *testing.T) {
+	db, err := createTestEngine(t)
+	require.NoError(t, err)
+
+	_, err = db.ExecString("CREATE TABLE foo (id INTEGER NOT NULL PRIMARY KEY, name TEXT)")
+	if err != nil {
+		t.Fatalf("failed to create table: %s", err.Error())
+	}
+
+	req := &store.Request{
+		Transaction: true,
+		Statements: []*store.Statement{
+			{
+				Sql: `INSERT INTO foo(id, name) VALUES(1, "fiona")`,
+			},
+			{
+				Sql: `INSERT INTO foo(id, name) VALUES(2, "fiona")`,
+			},
+			{
+				Sql: `INSERT INTO foo(id, name) VALUES(3, "fiona")`,
+			},
+			{
+				Sql: `INSERT INTO foo(id, name) VALUES(4, "fiona")`,
+			},
+		},
+	}
+	_, err = db.Exec(req)
+	require.NoError(t, err)
+
+	dstDB, err := ioutil.TempFile("", "serialize-test-")
+	require.NoError(t, err)
+	dstDB.Close()
+	defer os.Remove(dstDB.Name())
+
+	b, err := db.Serialize()
+	require.NoError(t, err)
+	err = ioutil.WriteFile(dstDB.Name(), b, 0644)
+	require.NoError(t, err)
+
+	newDB, err := engine.Open(dstDB.Name())
+	require.NoError(t, err)
+	defer newDB.Close()
+	defer os.Remove(dstDB.Name())
+
+	ro, err := newDB.QueryString(`SELECT * FROM foo`)
+	require.NoError(t, err)
+
+	if exp, got := `[{"columns":["id","name"],"types":["integer","text"],"values":[[1,"fiona"],[2,"fiona"],[3,"fiona"],[4,"fiona"]]}]`, convertToJSON(ro); exp != got {
+		t.Fatalf("unexpected results for query\nexp: %s\ngot: %s", exp, got)
+	}
 }
