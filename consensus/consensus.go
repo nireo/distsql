@@ -301,6 +301,10 @@ func (c *Consensus) apply(ty store.Action_Type, data proto.Message) (interface{}
 	timeout := 10 * time.Second
 	future := c.raft.Apply(encodedAction, timeout)
 	if future.Error() != nil {
+		if future.Error() == raft.ErrNotLeader {
+			return nil, ErrNotLeader
+		}
+
 		return nil, future.Error()
 	}
 
@@ -350,6 +354,10 @@ func (c *Consensus) Query(q *store.QueryReq) ([]*store.QueryRes, error) {
 
 		future := c.raft.Apply(b, 10*time.Second).(raft.ApplyFuture)
 		if future.Error() != nil {
+			if future.Error() == raft.ErrNotLeader {
+				return nil, ErrNotLeader
+			}
+
 			return nil, future.Error()
 		}
 
@@ -469,6 +477,10 @@ func (c *Consensus) Join(id, addr string) error {
 
 	addFuture := c.raft.AddVoter(serverID, serverAddr, 0, 0)
 	if err := addFuture.Error(); err != nil {
+		if err == raft.ErrNotLeader {
+			return ErrNotLeader
+		}
+
 		return err
 	}
 
@@ -477,8 +489,20 @@ func (c *Consensus) Join(id, addr string) error {
 }
 
 func (c *Consensus) Leave(id string) error {
-	removeFuture := c.raft.RemoveServer(raft.ServerID(id), 0, 0)
-	return removeFuture.Error()
+	if c.raft.State() != raft.Leader {
+		return ErrNotLeader
+	}
+
+	f := c.raft.RemoveServer(raft.ServerID(id), 0, 0)
+	if f.Error() != nil {
+		if f.Error() == raft.ErrNotLeader {
+			return ErrNotLeader
+		}
+
+		return f.Error()
+	}
+
+	return nil
 }
 
 func (c *Consensus) WaitForLeader(timeout time.Duration) error {
