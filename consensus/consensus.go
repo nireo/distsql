@@ -58,7 +58,9 @@ type Consensus struct {
 	log     *zap.Logger
 	db      *engine.Engine
 	dbPath  string
-	txmu    *sync.RWMutex
+	txmu    sync.RWMutex
+	lastIdx uint64
+	idxmu   sync.RWMutex
 }
 
 type snapshot struct {
@@ -250,7 +252,36 @@ func (c *Consensus) setupRaft(dataDir string) error {
 }
 
 func (c *Consensus) Apply(record *raft.Log) interface{} {
+	defer func() {
+		c.idxmu.Lock()
+		c.lastIdx = record.Index
+		defer c.idxmu.Unlock()
+	}()
+
 	return c.applyAction(record.Data, &c.db)
+}
+
+func (c *Consensus) WaitForIndex(idx uint64, timeout time.Duration) (uint64, error) {
+	tck := time.NewTicker(100 * time.Millisecond)
+	defer tck.Stop()
+	tmr := time.NewTimer(timeout)
+	defer tmr.Stop()
+
+	var idx2 uint64
+	for {
+		select {
+		case <-tck.C:
+			c.idxmu.RLock()
+			idx2 = c.lastIdx
+			c.idxmu.RUnlock()
+
+			if idx2 >= idx {
+				return idx2, nil
+			}
+		case <-tmr.C:
+			return 0, fmt.Errorf("timeout expired")
+		}
+	}
 }
 
 func (c *Consensus) applyAction(data []byte, dbPtr **engine.Engine) interface{} {
