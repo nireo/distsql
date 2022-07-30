@@ -3,13 +3,22 @@ CONFIG_PATH=${HOME}/.distsql
 
 
 .PHONY: compile
-compile:
+compile_store:
 	protoc proto/*.proto \
 		--go_out=. \
 		--go-grpc_out=. \
 		--go_opt=paths=source_relative \
 		--go-grpc_opt=paths=source_relative \
 		--proto_path=.
+
+compile_manager:
+	protoc manager/*.proto \
+		--go_out=. \
+		--go-grpc_out=. \
+		--go_opt=paths=source_relative \
+		--go-grpc_opt=paths=source_relative \
+		--proto_path=.
+
 
 .PHONY: gencert
 gencert:

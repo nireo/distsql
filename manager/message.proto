@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+option go_package = "github.com/nireo/distsql/store";
+
+message Addr {
+  string url = 1;
+}
+
+message Action {
+  enum Type {
+    ACTION_UNKNOWN = 0;
+    ACTION_GET_NODE_URL = 1;
+  }
+  Type type = 1;
+}
