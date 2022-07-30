@@ -399,3 +399,55 @@ func (s *Service) IsHTTPS() bool {
 func (s *Service) Addr() net.Addr {
 	return s.listener.Addr()
 }
+
+func (s *Service) query(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	resp := &DataResponse{
+		Results: &DBResponse{},
+	}
+
+	queries, err := getReqQueries(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	qr := &store.QueryReq{
+		Request: &store.Request{
+			Transaction: false,
+			Statements:  queries,
+		},
+		StrongConsistency: false,
+	}
+}
+
+func getReqQueries(r *http.Request) ([]*store.Statement, error) {
+	if r.Method == http.MethodGet {
+		query := r.URL.Query()
+		stmt := strings.TrimSpace(query.Get("q"))
+
+		if stmt == "" {
+			return nil, errors.New("bad query GET request")
+		}
+
+		return []*store.Statement{
+			{
+				Sql: stmt,
+			},
+		}, nil
+	}
+
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		return nil, errors.New("bad query POST request")
+	}
+	r.Body.Close()
+
+	return parseStatements(body)
+}
