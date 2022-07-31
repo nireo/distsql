@@ -440,6 +440,18 @@ func (s *Service) queryHandler(w http.ResponseWriter, r *http.Request) {
 		Results: &DBResponse{},
 	}
 
+	consistency, err := determineConsistency(r)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	isTransaction, err := checkBoolParam(r, "transaction")
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
 	queries, err := getReqQueries(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -448,10 +460,10 @@ func (s *Service) queryHandler(w http.ResponseWriter, r *http.Request) {
 
 	qr := &store.QueryReq{
 		Request: &store.Request{
-			Transaction: false,
+			Transaction: isTransaction,
 			Statements:  queries,
 		},
-		StrongConsistency: false,
+		StrongConsistency: consistency,
 	}
 
 	results, err := s.store.Query(qr)
@@ -500,4 +512,25 @@ func getReqQueries(r *http.Request) ([]*store.Statement, error) {
 	r.Body.Close()
 
 	return parseStatements(body)
+}
+
+func checkBoolParam(req *http.Request, param string) (bool, error) {
+	err := req.ParseForm()
+	if err != nil {
+		return false, err
+	}
+
+	if _, ok := req.Form[param]; ok {
+		return true, nil
+	}
+
+	return false, nil
+}
+
+// false = no strong consistency; true = strong consistency
+func determineConsistency(req *http.Request) (bool, error) {
+	queries := req.URL.Query()
+	consistency := strings.TrimSpace(queries.Get("consistency"))
+
+	return strings.ToLower(consistency) == "strong", nil
 }
