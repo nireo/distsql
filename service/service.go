@@ -13,6 +13,7 @@ import (
 
 	"github.com/nireo/distsql/consensus"
 	store "github.com/nireo/distsql/proto"
+	"github.com/nireo/distsql/proto/encoding"
 	"go.uber.org/zap"
 )
 
@@ -20,6 +21,10 @@ var (
 	ErrBadJson = errors.New("bad json couldn't be parsed properly")
 	ErrEmpty   = errors.New("no statements were provided")
 )
+
+type Manager interface {
+	GetNodeAPIAddr(nodeAddr string) (string, error)
+}
 
 // Store represents a raft store.
 type Store interface {
@@ -35,6 +40,7 @@ type Service struct {
 	listener net.Listener
 	addr     string
 
+	manager   Manager
 	store     Store
 	closeChan chan struct{}
 
@@ -49,6 +55,15 @@ type Service struct {
 type DBResponse struct {
 	ExecRes  []*store.ExecRes
 	QueryRes []*store.QueryRes
+}
+
+func (d *DBResponse) MarshalJSON() ([]byte, error) {
+	if d.ExecRes != nil {
+		return encoding.ProtoToJSON(d.ExecRes)
+	} else if d.QueryRes != nil {
+		return encoding.ProtoToJSON(d.QueryRes)
+	}
+	return json.Marshal(make([]interface{}, 0))
 }
 
 type DataResponse struct {
@@ -227,6 +242,18 @@ func (s *Service) leave(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Service) writeResponse(w http.ResponseWriter, r *http.Request, resp *DataResponse) {
+	b, err := json.Marshal(resp)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if _, err = w.Write(b); err != nil {
+		s.log.Error("response write failed", zap.Error(err))
+	}
+}
+
 func (s *Service) execHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
@@ -262,17 +289,7 @@ func (s *Service) execHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		response.Results.ExecRes = res
 	}
-
-	b, err = json.Marshal(response)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	_, err = w.Write(b)
-	if err != nil {
-		s.log.Info("response write failed", zap.Error(err))
-	}
+	s.writeResponse(w, r, response)
 }
 
 func (s *Service) redirectAddr(r *http.Request, url string) string {
@@ -400,7 +417,18 @@ func (s *Service) Addr() net.Addr {
 	return s.listener.Addr()
 }
 
-func (s *Service) query(w http.ResponseWriter, r *http.Request) {
+func (s *Service) GetLeaderAPIAddr() string {
+	nAddr := s.store.LeaderAddr()
+
+	apiAddr, err := s.manager.GetNodeAPIAddr(nAddr)
+	if err != nil {
+		return ""
+	}
+
+	return apiAddr
+}
+
+func (s *Service) queryHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
 	if r.Method != http.MethodGet && r.Method != http.MethodPost {
@@ -425,6 +453,28 @@ func (s *Service) query(w http.ResponseWriter, r *http.Request) {
 		},
 		StrongConsistency: false,
 	}
+
+	results, err := s.store.Query(qr)
+	if err != nil {
+		if err == consensus.ErrNotLeader {
+			leaderAddr := s.store.LeaderAddr()
+			if leaderAddr == "" {
+				http.Error(w, err.Error(), http.StatusServiceUnavailable)
+				return
+			}
+
+			redirect := s.redirectAddr(r, leaderAddr)
+			http.Redirect(w, r, redirect, http.StatusMovedPermanently)
+			return
+		}
+		resp.Error = err.Error()
+	} else {
+		resp.Results = &DBResponse{
+			QueryRes: results,
+		}
+	}
+
+	s.writeResponse(w, r, resp)
 }
 
 func getReqQueries(r *http.Request) ([]*store.Statement, error) {
