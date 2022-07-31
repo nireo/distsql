@@ -9,6 +9,8 @@ This is a fairly simple implementation of a distributed relational database. Som
 * `/server` Contains logic for how a given node accepts gRPC connections
 * `/consensus` Contains logic for distributed consensus using the raft algorithm.
 * `/discovery` Contains logic for keeping track of nodes in a distributed system.
+* `/service` A HTTP interface for interacting with a store and a cluster manager
+* `/manager` An interface for managing cluster communication and getting API addresses of nodes in the cluster.
 
 ## Running tests
 
@@ -27,3 +29,10 @@ $ make test
 ```
 
 Examples of test certificates is stored in the `/test` directory. That directory also contains files for defining actions a given user can access in the `policy.csv` file.
+
+## API Endpoints
+
+* `/join` Add a given node to the cluster
+* `/leave` Remove a given node from the cluster
+* `/execute` Execute given statements
+* `/query` Query given statements
