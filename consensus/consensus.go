@@ -2,11 +2,13 @@ package consensus
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -110,8 +112,79 @@ type queryResponse struct {
 	error error
 }
 
+func (f *snapshot) compressDatabase() ([]byte, error) {
+	if f.database == nil {
+		return nil, nil
+	}
+
+	var buf bytes.Buffer
+
+	gzipWriter, err := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := gzipWriter.Write(f.database); err != nil {
+		return nil, err
+	}
+
+	if err := gzipWriter.Close(); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}
+
 func (snapshot *snapshot) Persist(sink raft.SnapshotSink) error {
-	return errors.New("not implemented")
+	err := func() error {
+		b := new(bytes.Buffer)
+
+		// idea taken from rqlite. If the snapshot database is compressed, the size is
+		// marked using the largest uint64 number.
+		if err := binary.Write(b, binary.LittleEndian, uint64(math.MaxUint64)); err != nil {
+			return err
+		}
+
+		if _, err := sink.Write(b.Bytes()); err != nil {
+			return err
+		}
+		b.Reset()
+
+		compressedDB, err := snapshot.compressDatabase()
+		if err != nil {
+			return err
+		}
+
+		if compressedDB == nil {
+			if err := binary.Write(b, binary.LittleEndian, uint64(0)); err != nil {
+				return err
+			}
+
+			if _, err := sink.Write(b.Bytes()); err != nil {
+				return err
+			}
+		} else {
+			if err := binary.Write(b, binary.LittleEndian, uint64(len(compressedDB))); err != nil {
+				return err
+			}
+
+			if _, err := sink.Write(b.Bytes()); err != nil {
+				return err
+			}
+
+			if _, err := sink.Write(compressedDB); err != nil {
+				return err
+			}
+		}
+
+		return sink.Close()
+	}()
+
+	if err != nil {
+		sink.Cancel()
+		return err
+	}
+
+	return nil
 }
 
 func (snapshot *snapshot) Release() {}
@@ -531,12 +604,49 @@ func snapshotToBytes(rc io.ReadCloser) ([]byte, error) {
 	}
 	offset += 8
 
+	isCompressed := false
+
+	if size == uint64(math.MaxUint64) {
+		isCompressed = true
+
+		var actualSize uint64
+		err := binary.Read(
+			bytes.NewReader(b[offset:offset+8]),
+			binary.LittleEndian,
+			&actualSize,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("read compressed size: %s", err)
+		}
+		offset = offset + 8
+		size = actualSize
+	}
+
 	var res []byte
 	if size > 0 {
-		res = b[offset : offset+int64(size)]
+		if isCompressed {
+			buf := new(bytes.Buffer)
+
+			gzipReader, err := gzip.NewReader(bytes.NewReader(b[offset : offset+int64(size)]))
+			if err != nil {
+				return nil, err
+			}
+
+			if _, err := io.Copy(buf, gzipReader); err != nil {
+				return nil, fmt.Errorf("sqlite database decompress %s", err)
+			}
+
+			if err := gzipReader.Close(); err != nil {
+				return nil, err
+			}
+			res = buf.Bytes()
+		} else {
+			res = b[offset : offset+int64(size)]
+		}
 	} else {
 		res = nil
 	}
+
 	return res, nil
 }
 
