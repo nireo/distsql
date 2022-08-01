@@ -2,7 +2,6 @@ package consensus
 
 import (
 	"bytes"
-	"crypto/tls"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -38,16 +37,38 @@ var (
 type Config struct {
 	Raft struct {
 		raft.Config
-		StreamLayer       *StreamLayer
 		Bootstrap         bool
 		SnapshotThreshold uint64
 	}
 }
 
-type StreamLayer struct {
-	listener        net.Listener
-	serverTLSConfig *tls.Config
-	peerTLSConfig   *tls.Config
+type Listener interface {
+	net.Listener
+	Dial(address string, timeout time.Duration) (net.Conn, error)
+}
+
+type Transport struct {
+	ln Listener
+}
+
+func NewTransport(ln Listener) *Transport {
+	return &Transport{ln: ln}
+}
+
+func (t *Transport) Dial(addr raft.ServerAddress, timeout time.Duration) (net.Conn, error) {
+	return t.ln.Dial(string(addr), timeout)
+}
+
+func (t *Transport) Accept() (net.Conn, error) {
+	return t.ln.Accept()
+}
+
+func (t *Transport) Close() error {
+	return t.ln.Close()
+}
+
+func (t *Transport) Addr() net.Addr {
+	return t.ln.Addr()
 }
 
 type Consensus struct {
@@ -61,6 +82,8 @@ type Consensus struct {
 	txmu    sync.RWMutex
 	lastIdx uint64
 	idxmu   sync.RWMutex
+	ln      Listener
+	tn      *raft.NetworkTransport
 }
 
 type snapshot struct {
@@ -92,65 +115,6 @@ func (snapshot *snapshot) Persist(sink raft.SnapshotSink) error {
 }
 
 func (snapshot *snapshot) Release() {}
-
-func NewStreamLayer(ln net.Listener, serverTLSConfig,
-	peerTLSConfig *tls.Config) *StreamLayer {
-	return &StreamLayer{
-		listener:        ln,
-		serverTLSConfig: serverTLSConfig,
-		peerTLSConfig:   peerTLSConfig,
-	}
-}
-
-func (s *StreamLayer) Dial(addr raft.ServerAddress, timeout time.Duration) (
-	net.Conn, error,
-) {
-	dialer := &net.Dialer{Timeout: timeout}
-	var conn, err = dialer.Dial("tcp", string(addr))
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = conn.Write([]byte{byte(RaftRPC)})
-	if err != nil {
-		return nil, err
-	}
-
-	if s.peerTLSConfig != nil {
-		conn = tls.Client(conn, s.peerTLSConfig)
-	}
-	return conn, err
-}
-
-func (s *StreamLayer) Accept() (net.Conn, error) {
-	conn, err := s.listener.Accept()
-	if err != nil {
-		return nil, err
-	}
-
-	b := make([]byte, 1)
-	if _, err := conn.Read(b); err != nil {
-		return nil, err
-	}
-
-	if bytes.Compare([]byte{(byte(RaftRPC))}, b) != 0 {
-		return nil, fmt.Errorf("not a raft rpc")
-	}
-
-	if s.serverTLSConfig != nil {
-		return tls.Server(conn, s.serverTLSConfig), nil
-	}
-
-	return conn, nil
-}
-
-func (s *StreamLayer) Close() error {
-	return s.listener.Close()
-}
-
-func (s *StreamLayer) Addr() net.Addr {
-	return s.listener.Addr()
-}
 
 func NewDB(dataDir string, config *Config) (*Consensus, error) {
 	c := &Consensus{
@@ -202,8 +166,9 @@ func (c *Consensus) setupRaft(dataDir string) error {
 
 	maxPool := 5
 	timeout := 10 * time.Second
-	transport := raft.NewNetworkTransport(
-		c.config.Raft.StreamLayer,
+
+	c.tn = raft.NewNetworkTransport(
+		NewTransport(c.ln),
 		maxPool,
 		timeout,
 		os.Stderr,
@@ -229,7 +194,7 @@ func (c *Consensus) setupRaft(dataDir string) error {
 		config.CommitTimeout = c.config.Raft.CommitTimeout
 	}
 
-	c.raft, err = raft.NewRaft(config, c, stableStore, stableStore, snapshotStore, transport)
+	c.raft, err = raft.NewRaft(config, c, stableStore, stableStore, snapshotStore, c.tn)
 	if err != nil {
 		return err
 	}
@@ -243,7 +208,7 @@ func (c *Consensus) setupRaft(dataDir string) error {
 		config := raft.Configuration{
 			Servers: []raft.Server{{
 				ID:      config.LocalID,
-				Address: transport.LocalAddr(),
+				Address: c.tn.LocalAddr(),
 			}},
 		}
 		err = c.raft.BootstrapCluster(config).Error()

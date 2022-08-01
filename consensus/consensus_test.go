@@ -52,7 +52,6 @@ func TestSimpleUsage(t *testing.T) {
 		require.NoError(t, err)
 
 		config := Config{}
-		config.Raft.StreamLayer = NewStreamLayer(ln, nil, nil)
 		config.Raft.LocalID = raft.ServerID(fmt.Sprintf("%d", i))
 		config.Raft.HeartbeatTimeout = 50 * time.Millisecond
 		config.Raft.ElectionTimeout = 50 * time.Millisecond
