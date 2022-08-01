@@ -491,7 +491,7 @@ func copyEngine(dst, src *Engine) error {
 		})
 }
 
-func (eng *Engine) Stats() (map[string]int64, error) {
+func (eng *Engine) Metric() (map[string]int64, error) {
 	ms := make(map[string]int64)
 	for _, p := range []string{
 		"max_page_count",

@@ -9,6 +9,8 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"net/http/pprof"
+	"runtime"
 	"strings"
 
 	"github.com/nireo/distsql/consensus"
@@ -34,6 +36,7 @@ type Store interface {
 	Join(id, addr string) error
 	Leave(id string) error
 	GetServers() ([]*store.Server, error)
+	Metrics() (map[int64]any, error)
 }
 
 type Service struct {
@@ -50,6 +53,8 @@ type Service struct {
 	KeyFile  string
 
 	log *zap.Logger
+
+	pprof bool
 }
 
 type DBResponse struct {
@@ -163,6 +168,12 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.leave(w, r)
 	case strings.HasPrefix(r.URL.Path, "/execute"):
 		s.execHandler(w, r)
+	case strings.HasPrefix(r.URL.Path, "/query"):
+		s.queryHandler(w, r)
+	case strings.HasPrefix(r.URL.Path, "/pprof") && s.pprof:
+		s.pprofHandler(w, r)
+	case strings.HasPrefix(r.URL.Path, "/metric"):
+		s.metricHandler(w, r)
 	default:
 		w.WriteHeader(http.StatusNotFound)
 	}
@@ -512,6 +523,58 @@ func getReqQueries(r *http.Request) ([]*store.Statement, error) {
 	r.Body.Close()
 
 	return parseStatements(body)
+}
+
+func (s *Service) pprofHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.URL.Path {
+	case "/pprof/cmdline":
+		pprof.Cmdline(w, r)
+	case "/pprof/profile":
+		pprof.Profile(w, r)
+	case "/pprof/symbol":
+		pprof.Symbol(w, r)
+	default:
+		pprof.Index(w, r)
+	}
+}
+
+func (s *Service) metricHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	runtimeData := map[string]any{
+		"GOARCH":          runtime.GOARCH,
+		"GOOS":            runtime.GOOS,
+		"GOMAXPROCS":      runtime.GOMAXPROCS(0),
+		"cpu_count":       runtime.NumCPU(),
+		"goroutine_count": runtime.NumGoroutine(),
+		"version":         runtime.Version(),
+	}
+
+	storeMetrics, err := s.store.Metrics()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	metricTable := map[string]any{
+		"runtime": runtimeData,
+		"store":   storeMetrics,
+	}
+
+	b, err := json.Marshal(metricTable)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	} else {
+		if _, err := w.Write([]byte(b)); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
 }
 
 func checkBoolParam(req *http.Request, param string) (bool, error) {

@@ -667,3 +667,42 @@ func createDiskDatabase(b []byte, path string) (*engine.Engine, error) {
 func (c *Consensus) LeaderAddr() string {
 	return string(c.raft.Leader())
 }
+
+func (c *Consensus) Metrics() (map[string]any, error) {
+	databaseSize, err := c.db.Size()
+	if err != nil {
+		return nil, err
+	}
+
+	raftDirSize, err := getDirectorySize(c.raftDir)
+	if err != nil {
+		return nil, err
+	}
+
+	finalStatus := map[string]any{
+		"node_id":             c.config.Raft.LocalID,
+		"leader":              c.LeaderAddr(),
+		"directory":           c.raftDir,
+		"raft_directory_size": raftDirSize,
+		"database_size":       databaseSize,
+	}
+
+	return finalStatus, nil
+}
+
+func getDirectorySize(path string) (int64, error) {
+	var size int64
+
+	err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if !info.IsDir() {
+			size += info.Size()
+		}
+		return err
+	})
+
+	return size, err
+}

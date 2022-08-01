@@ -71,6 +71,10 @@ func (m *testStore) GetServers() ([]*store.Server, error) {
 	return nil, nil
 }
 
+func (m *testStore) Metrics() (map[int64]any, error) {
+	return nil, nil
+}
+
 func TestServiceOpen(t *testing.T) {
 	ts := &testStore{}
 	s, err := NewService("127.0.0.1:0", ts)
