@@ -36,7 +36,7 @@ type Store interface {
 	Join(id, addr string) error
 	Leave(id string) error
 	GetServers() ([]*store.Server, error)
-	Metrics() (map[int64]any, error)
+	Metrics() (map[string]any, error)
 }
 
 type Service struct {
@@ -76,12 +76,17 @@ type DataResponse struct {
 	Error   string      `json:"error,omitempty"`
 }
 
-func NewService(addr string, store Store) (*Service, error) {
+type Config struct {
+	EnablePPROF bool
+}
+
+func NewService(addr string, store Store, conf Config) (*Service, error) {
 	logger, err := zap.NewProduction()
 	return &Service{
 		addr:  addr,
 		store: store,
 		log:   logger,
+		pprof: conf.EnablePPROF,
 	}, err
 }
 

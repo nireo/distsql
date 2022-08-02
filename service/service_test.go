@@ -1,7 +1,9 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"testing"
 
@@ -71,13 +73,15 @@ func (m *testStore) GetServers() ([]*store.Server, error) {
 	return nil, nil
 }
 
-func (m *testStore) Metrics() (map[int64]any, error) {
+func (m *testStore) Metrics() (map[string]any, error) {
 	return nil, nil
 }
 
 func TestServiceOpen(t *testing.T) {
 	ts := &testStore{}
-	s, err := NewService("127.0.0.1:0", ts)
+	s, err := NewService("127.0.0.1:0", ts, Config{
+		EnablePPROF: true,
+	})
 	require.NoError(t, err)
 	require.NotNil(t, s)
 
@@ -86,7 +90,9 @@ func TestServiceOpen(t *testing.T) {
 
 func Test_404Routes(t *testing.T) {
 	m := &testStore{}
-	s, err := NewService("127.0.0.1:0", m)
+	s, err := NewService("127.0.0.1:0", m, Config{
+		EnablePPROF: true,
+	})
 	require.NoError(t, err)
 
 	if err := s.Start(); err != nil {
@@ -103,4 +109,89 @@ func Test_404Routes(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, resp.StatusCode, http.StatusNotFound)
+}
+
+func TestPPROFRoutes(t *testing.T) {
+	m := &testStore{}
+	s, err := NewService("127.0.0.1:0", m, Config{
+		EnablePPROF: true,
+	})
+	require.NoError(t, err)
+
+	if err := s.Start(); err != nil {
+		t.Fatalf("failed to start service")
+	}
+	defer s.Close()
+
+	host := fmt.Sprintf("http://%s", s.Addr().String())
+
+	client := &http.Client{}
+	resp, err := client.Get(host + "/pprof")
+	require.NoError(t, err)
+	require.Equal(t, resp.StatusCode, http.StatusOK)
+}
+
+func TestPPROFFail(t *testing.T) {
+	m := &testStore{}
+	s, err := NewService("127.0.0.1:0", m, Config{
+		EnablePPROF: false,
+	})
+	require.NoError(t, err)
+
+	if err := s.Start(); err != nil {
+		t.Fatalf("failed to start service")
+	}
+	defer s.Close()
+
+	host := fmt.Sprintf("http://%s", s.Addr().String())
+	resp, err := http.Get(host + "/pprof")
+	require.NoError(t, err)
+
+	require.Equal(t, resp.StatusCode, http.StatusNotFound)
+}
+
+func TestMetrics(t *testing.T) {
+	m := &testStore{}
+
+	s, err := NewService("127.0.0.1:0", m, Config{
+		EnablePPROF: false,
+	})
+	require.NoError(t, err)
+
+	if err := s.Start(); err != nil {
+		t.Fatalf("failed to start service")
+	}
+	defer s.Close()
+
+	host := fmt.Sprintf("http://%s", s.Addr().String())
+	resp, err := http.Get(host + "/metric")
+	require.NoError(t, err)
+
+	require.Equal(t, resp.Header.Get("Content-Type"), "application/json; charset=utf-8")
+	require.Equal(t, resp.StatusCode, http.StatusOK)
+
+	data, err := ioutil.ReadAll(resp.Body)
+	require.NoError(t, err)
+	resp.Body.Close()
+
+	var jsonData map[string]any
+	err = json.Unmarshal(data, &jsonData)
+	require.NoError(t, err)
+
+	fields := []string{
+		"GOARCH",
+		"GOOS",
+		"GOMAXPROCS",
+		"cpu_count",
+		"goroutine_count",
+		"version",
+	}
+
+	fmt.Println(jsonData)
+	runtimeMap := jsonData["runtime"].(map[string]any)
+
+	for _, field := range fields {
+		_, ok := runtimeMap[field]
+		require.True(t, ok)
+	}
 }
