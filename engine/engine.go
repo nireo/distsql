@@ -49,6 +49,53 @@ func Open(path string) (*Engine, error) {
 	}, nil
 }
 
+func OpenMemory() (*Engine, Error) {
+	memPath := fmt.Sprintf("file:/%s", genRandomString())
+
+	rwOpts := []string{
+		"mode=rw",
+		"vfs=memdb",
+		"_txlock=immediate",
+	}
+
+	rwDSN := fmt.Sprintf("%s?%s", memPath, strings.Join(rwOpts, "&"))
+	rwDB, err := sql.Open("sqlite3", rwDSN)
+	if err != nil {
+		return nil, err
+	}
+
+	// Ensure there is only one connection and it never closes.
+	// If it closed, in-memory database could be lost.
+	rwDB.SetConnMaxIdleTime(0)
+	rwDB.SetConnMaxLifetime(0)
+	rwDB.SetMaxIdleConns(1)
+	rwDB.SetMaxOpenConns(1)
+
+	roOpts := []string{
+		"mode=ro",
+		"vfs=memdb",
+		"_txlock=deferred",
+	}
+
+	roDSN := fmt.Sprintf("%s?%s", memPath, strings.Join(roOpts, "&"))
+	roDB, err := sql.Open("sqlite3", roDSN)
+	if err != nil {
+		return nil, err
+	}
+
+	// Ensure database is basically healthy.
+	if err := rwDB.Ping(); err != nil {
+		return nil, fmt.Errorf("failed to ping in-memory database: %s", err.Error())
+	}
+
+	return &Engine{
+		isMem:    true,
+		path:      ":memory:",
+		writeDB:      rwDB,
+		readDB:      roDB,
+	}, nil
+}
+
 func (eng *Engine) Path() string {
 	return eng.path
 }
@@ -515,3 +562,67 @@ func (eng *Engine) Metric() (map[string]int64, error) {
 func (eng *Engine) Copy(dst *Engine) error {
 	return copyEngine(dst, eng)
 }
+
+func genRandomString() string {
+	var output strings.Builder
+	chars := "abcdedfghijklmnopqrstABCDEFGHIJKLMNOP"
+
+	for i := 0; i < 20; i++ {
+		random := rand.Intn(len(chars))
+		randomChar := chars[random]
+		output.WriteString(string(randomChar))
+	}
+	return output
+}
+
+func DeserializeIntoMemory(b []byte) (retDB *DB, retErr error) {
+	// Get a plain-ol' in-memory database.
+	tmpDB, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		return nil, fmt.Errorf("DeserializeIntoMemory: %s", err.Error())
+	}
+	defer tmpDB.Close()
+
+	tmpConn, err := tmpDB.Conn(context.Background())
+	if err != nil {
+		return nil, err
+	}
+
+	retDB, err = OpenMemory()
+	if err != nil {
+		return nil, fmt.Errorf("DeserializeIntoMemory: %s", err.Error())
+	}
+	defer func() {
+		// Don't leak a database if deserialization fails.
+		if retDB != nil && retErr != nil {
+			retDB.Close()
+		}
+	}()
+
+	if err := tmpConn.Raw(func(driverConn interface{}) error {
+		srcConn := driverConn.(*sqlite3.SQLiteConn)
+		err2 := srcConn.Deserialize(b, "")
+		if err2 != nil {
+			return fmt.Errorf("DeserializeIntoMemory: %s", err.Error())
+		}
+		defer srcConn.Close()
+
+		// Now copy from tmp database to the database this function will return.
+		dbConn, err3 := retDB.rwDB.Conn(context.Background())
+		if err3 != nil {
+			return fmt.Errorf("DeserializeIntoMemory: %s", err.Error())
+		}
+		defer dbConn.Close()
+
+		return dbConn.Raw(func(driverConn interface{}) error {
+			dstConn := driverConn.(*sqlite3.SQLiteConn)
+			return copyDatabaseConnection(dstConn, srcConn)
+		})
+
+	}); err != nil {
+		return nil, err
+	}
+
+	return retDB, nil
+}
+
