@@ -3,7 +3,9 @@ package engine
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"math/rand"
 	"os"
 	"strings"
 	"time"
@@ -19,6 +21,12 @@ type Engine struct {
 	readOnly bool
 	isMem    bool
 	path     string
+}
+
+var DatabaseVersion string
+
+func init() {
+	DatabaseVersion, _, _ = sqlite3.Version()
 }
 
 // Open creates a new database engine instance.
@@ -49,7 +57,7 @@ func Open(path string) (*Engine, error) {
 	}, nil
 }
 
-func OpenMemory() (*Engine, Error) {
+func OpenMemory() (*Engine, error) {
 	memPath := fmt.Sprintf("file:/%s", genRandomString())
 
 	rwOpts := []string{
@@ -58,18 +66,13 @@ func OpenMemory() (*Engine, Error) {
 		"_txlock=immediate",
 	}
 
-	rwDSN := fmt.Sprintf("%s?%s", memPath, strings.Join(rwOpts, "&"))
-	rwDB, err := sql.Open("sqlite3", rwDSN)
+	rwDB, err := sql.Open(
+		"sqlite3",
+		fmt.Sprintf("%s?%s", memPath, strings.Join(rwOpts, "&")),
+	)
 	if err != nil {
 		return nil, err
 	}
-
-	// Ensure there is only one connection and it never closes.
-	// If it closed, in-memory database could be lost.
-	rwDB.SetConnMaxIdleTime(0)
-	rwDB.SetConnMaxLifetime(0)
-	rwDB.SetMaxIdleConns(1)
-	rwDB.SetMaxOpenConns(1)
 
 	roOpts := []string{
 		"mode=ro",
@@ -77,22 +80,23 @@ func OpenMemory() (*Engine, Error) {
 		"_txlock=deferred",
 	}
 
-	roDSN := fmt.Sprintf("%s?%s", memPath, strings.Join(roOpts, "&"))
-	roDB, err := sql.Open("sqlite3", roDSN)
+	roDB, err := sql.Open(
+		"sqlite3",
+		fmt.Sprintf("%s?%s", memPath, strings.Join(roOpts, "&")),
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	// Ensure database is basically healthy.
 	if err := rwDB.Ping(); err != nil {
 		return nil, fmt.Errorf("failed to ping in-memory database: %s", err.Error())
 	}
 
 	return &Engine{
-		isMem:    true,
-		path:      ":memory:",
-		writeDB:      rwDB,
-		readDB:      roDB,
+		isMem:   true,
+		path:    ":memory:",
+		writeDB: rwDB,
+		readDB:  roDB,
 	}, nil
 }
 
@@ -487,7 +491,22 @@ func (eng *Engine) Size() (int64, error) {
 
 // Serialize returns the database as bytes.
 func (eng *Engine) Serialize() ([]byte, error) {
+	if eng.isMem {
+		return nil, errors.New("in-memory database cannot be serialized")
+	}
 	return os.ReadFile(eng.path)
+}
+
+func (eng *Engine) Backup(path string) error {
+	dstDB, err := Open(path)
+	if err != nil {
+		return err
+	}
+
+	if err := copyEngine(dstDB, eng); err != nil {
+		return fmt.Errorf("copying database failed")
+	}
+	return nil
 }
 
 func copyConnection(dst, src *sqlite3.SQLiteConn) error {
@@ -538,25 +557,41 @@ func copyEngine(dst, src *Engine) error {
 		})
 }
 
-func (eng *Engine) Metric() (map[string]int64, error) {
-	ms := make(map[string]int64)
-	for _, p := range []string{
-		"max_page_count",
-		"page_count",
-		"page_size",
-		"hard_heap_limit",
-		"soft_heap_limit",
-		"cache_size",
-		"freelist_count",
-	} {
-		res, err := eng.QueryString(fmt.Sprintf("PRAGMA %s", p))
-		if err != nil {
-			return nil, err
+func (eng *Engine) Metric() (map[string]any, error) {
+
+	memData, err := (func() (map[string]int64, error) {
+		ms := make(map[string]int64)
+		for _, p := range []string{
+			"max_page_count",
+			"page_count",
+			"page_size",
+			"hard_heap_limit",
+			"soft_heap_limit",
+			"cache_size",
+			"freelist_count",
+		} {
+			res, err := eng.QueryString(fmt.Sprintf("PRAGMA %s", p))
+			if err != nil {
+				return nil, err
+			}
+			ms[p] = res[0].Values[0].Params[0].GetI()
 		}
-		ms[p] = res[0].Values[0].Params[0].GetI()
+
+		return ms, nil
+	})()
+
+	if err != nil {
+		return nil, err
 	}
 
-	return ms, nil
+	databaseSize, err := eng.Size()
+
+	resultMap := map[string]any{
+		"version":      DatabaseVersion,
+		"memory_stats": memData,
+		"size":         databaseSize,
+	}
+	return resultMap, nil
 }
 
 func (eng *Engine) Copy(dst *Engine) error {
@@ -572,57 +607,5 @@ func genRandomString() string {
 		randomChar := chars[random]
 		output.WriteString(string(randomChar))
 	}
-	return output
+	return output.String()
 }
-
-func DeserializeIntoMemory(b []byte) (retDB *DB, retErr error) {
-	// Get a plain-ol' in-memory database.
-	tmpDB, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		return nil, fmt.Errorf("DeserializeIntoMemory: %s", err.Error())
-	}
-	defer tmpDB.Close()
-
-	tmpConn, err := tmpDB.Conn(context.Background())
-	if err != nil {
-		return nil, err
-	}
-
-	retDB, err = OpenMemory()
-	if err != nil {
-		return nil, fmt.Errorf("DeserializeIntoMemory: %s", err.Error())
-	}
-	defer func() {
-		// Don't leak a database if deserialization fails.
-		if retDB != nil && retErr != nil {
-			retDB.Close()
-		}
-	}()
-
-	if err := tmpConn.Raw(func(driverConn interface{}) error {
-		srcConn := driverConn.(*sqlite3.SQLiteConn)
-		err2 := srcConn.Deserialize(b, "")
-		if err2 != nil {
-			return fmt.Errorf("DeserializeIntoMemory: %s", err.Error())
-		}
-		defer srcConn.Close()
-
-		// Now copy from tmp database to the database this function will return.
-		dbConn, err3 := retDB.rwDB.Conn(context.Background())
-		if err3 != nil {
-			return fmt.Errorf("DeserializeIntoMemory: %s", err.Error())
-		}
-		defer dbConn.Close()
-
-		return dbConn.Raw(func(driverConn interface{}) error {
-			dstConn := driverConn.(*sqlite3.SQLiteConn)
-			return copyDatabaseConnection(dstConn, srcConn)
-		})
-
-	}); err != nil {
-		return nil, err
-	}
-
-	return retDB, nil
-}
-
