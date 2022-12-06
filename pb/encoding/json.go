@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	store "github.com/nireo/distsql/proto"
+	"github.com/nireo/distsql/pb"
 )
 
 // Execute result
@@ -23,7 +23,7 @@ type EncQueryRes struct {
 	Error   string          `json:"error,omitempty"`
 }
 
-func convertExecuteResult(res *store.ExecRes) *Result {
+func convertExecuteResult(res *pb.ExecRes) *Result {
 	return &Result{
 		LastInsertID: res.LastInsertId,
 		RowsAffected: res.RowsAffected,
@@ -32,7 +32,7 @@ func convertExecuteResult(res *store.ExecRes) *Result {
 	}
 }
 
-func convertValues(dest [][]interface{}, v []*store.Values) error {
+func convertValues(dest [][]interface{}, v []*pb.Values) error {
 	for n := range v {
 		vals := v[n]
 		if vals == nil {
@@ -49,15 +49,15 @@ func convertValues(dest [][]interface{}, v []*store.Values) error {
 		rowValues := make([]interface{}, len(params))
 		for p := range params {
 			switch w := params[p].GetValue().(type) {
-			case *store.Parameter_I:
+			case *pb.Parameter_I:
 				rowValues[p] = w.I
-			case *store.Parameter_D:
+			case *pb.Parameter_D:
 				rowValues[p] = w.D
-			case *store.Parameter_B:
+			case *pb.Parameter_B:
 				rowValues[p] = w.B
-			case *store.Parameter_Y:
+			case *pb.Parameter_Y:
 				rowValues[p] = w.Y
-			case *store.Parameter_S:
+			case *pb.Parameter_S:
 				rowValues[p] = w.S
 			case nil:
 				rowValues[p] = nil
@@ -71,7 +71,7 @@ func convertValues(dest [][]interface{}, v []*store.Values) error {
 	return nil
 }
 
-func convertQueryRes(q *store.QueryRes) (*EncQueryRes, error) {
+func convertQueryRes(q *pb.QueryRes) (*EncQueryRes, error) {
 	dstValues := make([][]any, len(q.Values))
 	if err := convertValues(dstValues, q.Values); err != nil {
 		return nil, err
@@ -101,21 +101,21 @@ func structToJson(v any) ([]byte, error) {
 
 func ProtoToJSON(v any) ([]byte, error) {
 	switch val := v.(type) {
-	case *store.ExecRes:
+	case *pb.ExecRes:
 		return structToJson(convertExecuteResult(val))
-	case []*store.ExecRes:
+	case []*pb.ExecRes:
 		vals := make([]*Result, len(val))
 		for i, res := range val {
 			vals[i] = convertExecuteResult(res)
 		}
 		return structToJson(vals)
-	case *store.QueryRes:
+	case *pb.QueryRes:
 		res, err := convertQueryRes(val)
 		if err != nil {
 			return nil, err
 		}
 		return structToJson(res)
-	case []*store.QueryRes:
+	case []*pb.QueryRes:
 		var err error
 		results := make([]*EncQueryRes, len(val))
 		for i := range results {
@@ -125,7 +125,7 @@ func ProtoToJSON(v any) ([]byte, error) {
 			}
 		}
 		return structToJson(results)
-	case []*store.Values:
+	case []*pb.Values:
 		vals := make([][]any, len(val))
 		if err := convertValues(vals, val); err != nil {
 			return nil, err

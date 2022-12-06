@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/hashicorp/raft"
-	store "github.com/nireo/distsql/proto"
-	"github.com/nireo/distsql/proto/encoding"
+	"github.com/nireo/distsql/pb"
+	"github.com/nireo/distsql/pb/encoding"
 	"github.com/stretchr/testify/require"
 )
 
@@ -76,8 +76,8 @@ func TestSimpleUsage(t *testing.T) {
 		dbs = append(dbs, db)
 	}
 
-	executes := &store.Request{
-		Statements: []*store.Statement{
+	executes := &pb.Request{
+		Statements: []*pb.Statement{
 			{
 				Sql: "CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, name TEXT)",
 			},
@@ -116,10 +116,10 @@ func TestSimpleUsage(t *testing.T) {
 	for _, q := range queries {
 		require.Eventually(t, func() bool {
 			for j := 0; j < nodeCount; j++ {
-				r, err := dbs[j].Query(&store.QueryReq{
+				r, err := dbs[j].Query(&pb.QueryReq{
 					StrongConsistency: false, // don't query everything from the leader
-					Request: &store.Request{
-						Statements: []*store.Statement{
+					Request: &pb.Request{
+						Statements: []*pb.Statement{
 							{Sql: q.query},
 						},
 					},
@@ -134,7 +134,13 @@ func TestSimpleUsage(t *testing.T) {
 
 				js := convertToJSON(r)
 				if got, want := js, q.wantedOutput; got != want {
-					fmt.Printf("On query: %s | Node: %d\n\twanted: %s\n\tgot:%s\n", q.query, j, want, got)
+					fmt.Printf(
+						"On query: %s | Node: %d\n\twanted: %s\n\tgot:%s\n",
+						q.query,
+						j,
+						want,
+						got,
+					)
 					return false
 				}
 			}
@@ -146,8 +152,8 @@ func TestSimpleUsage(t *testing.T) {
 	require.NoError(t, err)
 	time.Sleep(50 * time.Millisecond)
 
-	executes = &store.Request{
-		Statements: []*store.Statement{
+	executes = &pb.Request{
+		Statements: []*pb.Statement{
 			{
 				Sql: `INSERT INTO test(name) VALUES("ctest")`,
 			},
@@ -158,10 +164,10 @@ func TestSimpleUsage(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)
 
-	qr := &store.QueryReq{
+	qr := &pb.QueryReq{
 		StrongConsistency: false,
-		Request: &store.Request{
-			Statements: []*store.Statement{
+		Request: &pb.Request{
+			Statements: []*pb.Statement{
 				{
 					Sql: `SELECT * FROM test WHERE name="ctest"`,
 				},

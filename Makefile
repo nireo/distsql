@@ -4,7 +4,7 @@ CONFIG_PATH=${HOME}/.distsql
 
 .PHONY: compile
 compile_store:
-	protoc proto/*.proto \
+	protoc pb/*.proto \
 		--go_out=. \
 		--go-grpc_out=. \
 		--go_opt=paths=source_relative \

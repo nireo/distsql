@@ -18,7 +18,7 @@ import (
 	"github.com/hashicorp/raft"
 	raftboltdb "github.com/hashicorp/raft-boltdb"
 	"github.com/nireo/distsql/engine"
-	store "github.com/nireo/distsql/proto"
+	"github.com/nireo/distsql/pb"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 )
@@ -103,12 +103,12 @@ func newSnapshot(db *engine.Engine) *snapshot {
 }
 
 type execResponse struct {
-	res   []*store.ExecRes
+	res   []*pb.ExecRes
 	error error
 }
 
 type queryResponse struct {
-	res   []*store.QueryRes
+	res   []*pb.QueryRes
 	error error
 }
 
@@ -178,7 +178,6 @@ func (snapshot *snapshot) Persist(sink raft.SnapshotSink) error {
 
 		return sink.Close()
 	}()
-
 	if err != nil {
 		sink.Cancel()
 		return err
@@ -227,12 +226,12 @@ func (c *Consensus) setupRaft(dataDir string) error {
 		return err
 	}
 
-	stableStore, err := raftboltdb.NewBoltStore(filepath.Join(dataDir, "raft", "raft.db"))
+	stablepb, err := raftboltdb.NewBoltpb(filepath.Join(dataDir, "raft", "raft.db"))
 	if err != nil {
 		return err
 	}
 
-	snapshotStore, err := raft.NewFileSnapshotStore(filepath.Join(dataDir, "raft"), 1, os.Stderr)
+	snapshotpb, err := raft.NewFileSnapshotpb(filepath.Join(dataDir, "raft"), 1, os.Stderr)
 	if err != nil {
 		return err
 	}
@@ -267,12 +266,12 @@ func (c *Consensus) setupRaft(dataDir string) error {
 		config.CommitTimeout = c.config.Raft.CommitTimeout
 	}
 
-	c.raft, err = raft.NewRaft(config, c, stableStore, stableStore, snapshotStore, c.tn)
+	c.raft, err = raft.NewRaft(config, c, stablepb, stablepb, snapshotpb, c.tn)
 	if err != nil {
 		return err
 	}
 
-	hasState, err := raft.HasExistingState(stableStore, stableStore, snapshotStore)
+	hasState, err := raft.HasExistingState(stablepb, stablepb, snapshotpb)
 	if err != nil {
 		return err
 	}
@@ -323,7 +322,7 @@ func (c *Consensus) WaitForIndex(idx uint64, timeout time.Duration) (uint64, err
 }
 
 func (c *Consensus) applyAction(data []byte, dbPtr **engine.Engine) interface{} {
-	var ac store.Action
+	var ac pb.Action
 	db := *dbPtr
 
 	if err := proto.Unmarshal(data, &ac); err != nil {
@@ -331,33 +330,33 @@ func (c *Consensus) applyAction(data []byte, dbPtr **engine.Engine) interface{} 
 	}
 
 	switch ac.Type {
-	case store.Action_ACTION_EXECUTE:
-		var execAc store.Request
+	case pb.Action_ACTION_EXECUTE:
+		var execAc pb.Request
 		if err := proto.Unmarshal(ac.Body, &execAc); err != nil {
 			panic("failed to unmarshal execute request")
 		}
 		res, err := db.Exec(&execAc)
 		return &execResponse{res: res, error: err}
-	case store.Action_ACTION_QUERY:
-		var execAc store.QueryReq
+	case pb.Action_ACTION_QUERY:
+		var execAc pb.QueryReq
 		if err := proto.Unmarshal(ac.Body, &execAc); err != nil {
 			panic("failed to unmarshal execute request")
 		}
 		res, err := db.Query(execAc.Request)
 		return &queryResponse{res: res, error: err}
-	case store.Action_ACTION_NO:
+	case pb.Action_ACTION_NO:
 		return nil
 	}
 	return nil
 }
 
-func (c *Consensus) apply(ty store.Action_Type, data proto.Message) (interface{}, error) {
+func (c *Consensus) apply(ty pb.Action_Type, data proto.Message) (interface{}, error) {
 	messageBytes, err := proto.Marshal(data)
 	if err != nil {
 		return nil, err
 	}
 
-	action := &store.Action{
+	action := &pb.Action{
 		Type: ty,
 		Body: messageBytes,
 	}
@@ -385,12 +384,12 @@ func (c *Consensus) apply(ty store.Action_Type, data proto.Message) (interface{}
 	return res, nil
 }
 
-func (c *Consensus) Exec(req *store.Request) ([]*store.ExecRes, error) {
+func (c *Consensus) Exec(req *pb.Request) ([]*pb.ExecRes, error) {
 	if !c.IsLeader() {
 		return nil, ErrNotLeader
 	}
 
-	res, err := c.apply(store.Action_ACTION_EXECUTE, req)
+	res, err := c.apply(pb.Action_ACTION_EXECUTE, req)
 	if err != nil {
 		return nil, err
 	}
@@ -399,7 +398,7 @@ func (c *Consensus) Exec(req *store.Request) ([]*store.ExecRes, error) {
 	return fsmRes.res, fsmRes.error
 }
 
-func (c *Consensus) Query(q *store.QueryReq) ([]*store.QueryRes, error) {
+func (c *Consensus) Query(q *pb.QueryReq) ([]*pb.QueryRes, error) {
 	if q.StrongConsistency {
 		// query from the leader ensuring that entries are up-to-date
 		if !c.IsLeader() {
@@ -411,8 +410,8 @@ func (c *Consensus) Query(q *store.QueryReq) ([]*store.QueryRes, error) {
 			return nil, err
 		}
 
-		action := &store.Action{
-			Type: store.Action_ACTION_QUERY,
+		action := &pb.Action{
+			Type: pb.Action_ACTION_QUERY,
 			Body: b,
 		}
 
@@ -442,12 +441,12 @@ func (c *Consensus) Query(q *store.QueryReq) ([]*store.QueryRes, error) {
 	return c.db.Query(q.Request)
 }
 
-func (c *Consensus) Restore(rc io.ReadCloser) error {
+func (c *Consensus) Repb(rc io.ReadCloser) error {
 	start := time.Now()
 
 	bytes, err := snapshotToBytes(rc)
 	if err != nil {
-		return fmt.Errorf("restore failed: %s", err)
+		return fmt.Errorf("repb failed: %s", err)
 	}
 
 	if bytes == nil {
@@ -455,7 +454,7 @@ func (c *Consensus) Restore(rc io.ReadCloser) error {
 	}
 
 	if err := c.db.Close(); err != nil {
-		return fmt.Errorf("failed to close pre-restore database: %s", err)
+		return fmt.Errorf("failed to close pre-repb database: %s", err)
 	}
 
 	db, err := createDiskDatabase(bytes, c.dbPath)
@@ -492,15 +491,15 @@ func (c *Consensus) Close() error {
 	return c.db.Close()
 }
 
-func (c *Consensus) GetServers() ([]*store.Server, error) {
+func (c *Consensus) GetServers() ([]*pb.Server, error) {
 	future := c.raft.GetConfiguration()
 	if err := future.Error(); err != nil {
 		return nil, err
 	}
 
-	var servers []*store.Server
+	var servers []*pb.Server
 	for _, server := range future.Configuration().Servers {
-		servers = append(servers, &store.Server{
+		servers = append(servers, &pb.Server{
 			Id:       string(server.ID),
 			RpcAddr:  string(server.Address),
 			IsLeader: c.raft.Leader() == server.Address,

@@ -12,7 +12,7 @@ import (
 
 	"github.com/mattn/go-sqlite3"
 	_ "github.com/mattn/go-sqlite3"
-	store "github.com/nireo/distsql/proto"
+	"github.com/nireo/distsql/pb"
 )
 
 type Engine struct {
@@ -121,9 +121,9 @@ func (eng *Engine) Close() error {
 	return eng.writeDB.Close()
 }
 
-func (eng *Engine) ExecString(str string) ([]*store.ExecRes, error) {
-	req := &store.Request{
-		Statements: []*store.Statement{
+func (eng *Engine) ExecString(str string) ([]*pb.ExecRes, error) {
+	req := &pb.Request{
+		Statements: []*pb.Statement{
 			{Sql: str},
 		},
 	}
@@ -131,7 +131,7 @@ func (eng *Engine) ExecString(str string) ([]*store.ExecRes, error) {
 	return eng.Exec(req)
 }
 
-func (eng *Engine) Exec(req *store.Request) ([]*store.ExecRes, error) {
+func (eng *Engine) Exec(req *pb.Request) ([]*pb.ExecRes, error) {
 	conn, err := eng.writeDB.Conn(context.Background())
 	if err != nil {
 		return nil, err
@@ -161,10 +161,10 @@ func (eng *Engine) Exec(req *store.Request) ([]*store.ExecRes, error) {
 		runner = conn
 	}
 
-	results := make([]*store.ExecRes, 0)
+	results := make([]*pb.ExecRes, 0)
 
 	// returns bool determining if the loop should break
-	errorHandler := func(res *store.ExecRes, err error) bool {
+	errorHandler := func(res *pb.ExecRes, err error) bool {
 		res.Error = err.Error()
 		results = append(results, res)
 
@@ -178,7 +178,7 @@ func (eng *Engine) Exec(req *store.Request) ([]*store.ExecRes, error) {
 	}
 
 	for _, stmt := range req.Statements {
-		res := &store.ExecRes{}
+		res := &pb.ExecRes{}
 
 		if stmt.Sql == "" {
 			continue
@@ -226,16 +226,16 @@ func (eng *Engine) Exec(req *store.Request) ([]*store.ExecRes, error) {
 	return results, err
 }
 
-func (eng *Engine) QueryString(query string) ([]*store.QueryRes, error) {
-	r := &store.Request{
-		Statements: []*store.Statement{
+func (eng *Engine) QueryString(query string) ([]*pb.QueryRes, error) {
+	r := &pb.Request{
+		Statements: []*pb.Statement{
 			{Sql: query},
 		},
 	}
 	return eng.Query(r)
 }
 
-func (eng *Engine) Query(req *store.Request) ([]*store.QueryRes, error) {
+func (eng *Engine) Query(req *pb.Request) ([]*pb.QueryRes, error) {
 	var err error
 	// get connection from the read database
 	conn, err := eng.readDB.Conn(context.Background())
@@ -260,13 +260,13 @@ func (eng *Engine) Query(req *store.Request) ([]*store.QueryRes, error) {
 		runner = conn
 	}
 
-	results := make([]*store.QueryRes, 0)
+	results := make([]*pb.QueryRes, 0)
 	for _, q := range req.Statements {
 		if q.Sql == "" {
 			continue
 		}
 
-		res := &store.QueryRes{}
+		res := &pb.QueryRes{}
 		var readOnly bool
 
 		// This code is used to make sure that the given query, does
@@ -345,7 +345,7 @@ func (eng *Engine) Query(req *store.Request) ([]*store.QueryRes, error) {
 				return nil, err
 			}
 
-			res.Values = append(res.Values, &store.Values{
+			res.Values = append(res.Values, &pb.Values{
 				Params: prs,
 			})
 		}
@@ -371,65 +371,64 @@ func (eng *Engine) Query(req *store.Request) ([]*store.QueryRes, error) {
 	return results, err
 }
 
-func convertParamsToSQL(params []*store.Parameter) ([]any, error) {
+func convertParamsToSQL(params []*pb.Parameter) ([]any, error) {
 	values := make([]interface{}, len(params))
 	for i := range params {
 		switch w := params[i].GetValue().(type) {
-		case *store.Parameter_I:
+		case *pb.Parameter_I:
 			values[i] = sql.Named(params[i].GetName(), w.I)
-		case *store.Parameter_D:
+		case *pb.Parameter_D:
 			values[i] = sql.Named(params[i].GetName(), w.D)
-		case *store.Parameter_B:
+		case *pb.Parameter_B:
 			values[i] = sql.Named(params[i].GetName(), w.B)
-		case *store.Parameter_Y:
+		case *pb.Parameter_Y:
 			values[i] = sql.Named(params[i].GetName(), w.Y)
-		case *store.Parameter_S:
+		case *pb.Parameter_S:
 			values[i] = sql.Named(params[i].GetName(), w.S)
 		default:
 			return nil, fmt.Errorf("unsupported type: %T", w)
 		}
 	}
 	return values, nil
-
 }
 
-func convertToProto(types []string, row []any) ([]*store.Parameter, error) {
-	values := make([]*store.Parameter, len(types))
+func convertToProto(types []string, row []any) ([]*pb.Parameter, error) {
+	values := make([]*pb.Parameter, len(types))
 	for i, v := range row {
 		switch val := v.(type) {
 		case int:
 		case int64:
-			values[i] = &store.Parameter{
-				Value: &store.Parameter_I{
+			values[i] = &pb.Parameter{
+				Value: &pb.Parameter_I{
 					I: val,
 				},
 			}
 		case float64:
-			values[i] = &store.Parameter{
-				Value: &store.Parameter_D{
+			values[i] = &pb.Parameter{
+				Value: &pb.Parameter_D{
 					D: val,
 				},
 			}
 		case bool:
-			values[i] = &store.Parameter{
-				Value: &store.Parameter_B{
+			values[i] = &pb.Parameter{
+				Value: &pb.Parameter_B{
 					B: val,
 				},
 			}
 		case string:
-			values[i] = &store.Parameter{
-				Value: &store.Parameter_S{
+			values[i] = &pb.Parameter{
+				Value: &pb.Parameter_S{
 					S: val,
 				},
 			}
 		case []byte:
 			if isStringType(types[i]) {
-				values[i].Value = &store.Parameter_S{
+				values[i].Value = &pb.Parameter_S{
 					S: string(val),
 				}
 			} else {
-				values[i] = &store.Parameter{
-					Value: &store.Parameter_Y{
+				values[i] = &pb.Parameter{
+					Value: &pb.Parameter_Y{
 						Y: val,
 					},
 				}
@@ -439,8 +438,8 @@ func convertToProto(types []string, row []any) ([]*store.Parameter, error) {
 			if err != nil {
 				return nil, err
 			}
-			values[i] = &store.Parameter{
-				Value: &store.Parameter_S{
+			values[i] = &pb.Parameter{
+				Value: &pb.Parameter_S{
 					S: string(rfc3339),
 				},
 			}
@@ -451,7 +450,6 @@ func convertToProto(types []string, row []any) ([]*store.Parameter, error) {
 		}
 	}
 	return values, nil
-
 }
 
 func isStringType(t string) bool {
@@ -558,7 +556,6 @@ func copyEngine(dst, src *Engine) error {
 }
 
 func (eng *Engine) Metric() (map[string]any, error) {
-
 	memData, err := (func() (map[string]int64, error) {
 		ms := make(map[string]int64)
 		for _, p := range []string{
@@ -579,7 +576,6 @@ func (eng *Engine) Metric() (map[string]any, error) {
 
 		return ms, nil
 	})()
-
 	if err != nil {
 		return nil, err
 	}

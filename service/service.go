@@ -14,8 +14,8 @@ import (
 	"strings"
 
 	"github.com/nireo/distsql/consensus"
-	store "github.com/nireo/distsql/proto"
-	"github.com/nireo/distsql/proto/encoding"
+	"github.com/nireo/distsql/pb"
+	"github.com/nireo/distsql/pb/encoding"
 	"go.uber.org/zap"
 )
 
@@ -28,14 +28,14 @@ type Manager interface {
 	GetNodeAPIAddr(nodeAddr string) (string, error)
 }
 
-// Store represents a raft store.
+// pb represents a raft pb.
 type Store interface {
-	Execute(req *store.Request) ([]*store.ExecRes, error)
-	Query(req *store.QueryReq) ([]*store.QueryRes, error)
+	Execute(req *pb.Request) ([]*pb.ExecRes, error)
+	Query(req *pb.QueryReq) ([]*pb.QueryRes, error)
 	LeaderAddr() string
 	Join(id, addr string) error
 	Leave(id string) error
-	GetServers() ([]*store.Server, error)
+	GetServers() ([]*pb.Server, error)
 	Metrics() (map[string]any, error)
 }
 
@@ -44,7 +44,7 @@ type Service struct {
 	addr     string
 
 	manager   Manager
-	store     Store
+	pb        Store
 	closeChan chan struct{}
 
 	// security
@@ -58,8 +58,8 @@ type Service struct {
 }
 
 type DBResponse struct {
-	ExecRes  []*store.ExecRes
-	QueryRes []*store.QueryRes
+	ExecRes  []*pb.ExecRes
+	QueryRes []*pb.QueryRes
 }
 
 func (d *DBResponse) MarshalJSON() ([]byte, error) {
@@ -80,11 +80,11 @@ type Config struct {
 	EnablePPROF bool
 }
 
-func NewService(addr string, store Store, conf Config) (*Service, error) {
+func NewService(addr string, pb Store, conf Config) (*Service, error) {
 	logger, err := zap.NewProduction()
 	return &Service{
 		addr:  addr,
-		store: store,
+		pb:    pb,
 		log:   logger,
 		pprof: conf.EnablePPROF,
 	}, err
@@ -214,7 +214,7 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.store.Join(id.(string), addr.(string)); err != nil {
+	if err := s.pb.Join(id.(string), addr.(string)); err != nil {
 		if err == consensus.ErrNotLeader {
 			// TODO: redirect to leader
 		}
@@ -248,7 +248,7 @@ func (s *Service) leave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.store.Leave(id.(string)); err != nil {
+	if err := s.pb.Leave(id.(string)); err != nil {
 		if err == consensus.ErrNotLeader {
 			// TODO: redirect to leader
 		}
@@ -291,7 +291,7 @@ func (s *Service) execHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req := &store.Request{
+	req := &pb.Request{
 		Statements: statements,
 	}
 
@@ -299,7 +299,7 @@ func (s *Service) execHandler(w http.ResponseWriter, r *http.Request) {
 		Results: &DBResponse{},
 	}
 
-	res, err := s.store.Execute(req)
+	res, err := s.pb.Execute(req)
 	if err != nil {
 		response.Error = err.Error()
 	} else {
@@ -316,7 +316,7 @@ func (s *Service) redirectAddr(r *http.Request, url string) string {
 	return fmt.Sprintf("%s%s%s", url, r.URL.Path, rq)
 }
 
-func parseStatements(b []byte) ([]*store.Statement, error) {
+func parseStatements(b []byte) ([]*pb.Statement, error) {
 	var statements []string
 	err := json.Unmarshal(b, &statements)
 	if err == nil {
@@ -324,9 +324,9 @@ func parseStatements(b []byte) ([]*store.Statement, error) {
 			return nil, ErrEmpty
 		}
 
-		res := make([]*store.Statement, len(statements))
+		res := make([]*pb.Statement, len(statements))
 		for i := range statements {
-			res[i] = &store.Statement{
+			res[i] = &pb.Statement{
 				Sql: statements[i],
 			}
 		}
@@ -339,7 +339,7 @@ func parseStatements(b []byte) ([]*store.Statement, error) {
 		return nil, ErrBadJson
 	}
 
-	res := make([]*store.Statement, len(withParams))
+	res := make([]*pb.Statement, len(withParams))
 	for i := range withParams {
 		if len(withParams[i]) == 0 {
 			return nil, ErrEmpty
@@ -350,7 +350,7 @@ func parseStatements(b []byte) ([]*store.Statement, error) {
 			return nil, ErrBadJson
 		}
 
-		res[i] = &store.Statement{
+		res[i] = &pb.Statement{
 			Sql:    sql,
 			Params: nil,
 		}
@@ -359,7 +359,7 @@ func parseStatements(b []byte) ([]*store.Statement, error) {
 			continue
 		}
 
-		res[i].Params = make([]*store.Parameter, 0)
+		res[i].Params = make([]*pb.Parameter, 0)
 		for j := range withParams[i][1:] {
 			m, ok := withParams[i][j+1].(map[string]any)
 			if ok {
@@ -382,40 +382,40 @@ func parseStatements(b []byte) ([]*store.Statement, error) {
 	return res, nil
 }
 
-func constructParam(name string, val any) (*store.Parameter, error) {
+func constructParam(name string, val any) (*pb.Parameter, error) {
 	switch v := val.(type) {
 	case int:
 	case int64:
-		return &store.Parameter{
-			Value: &store.Parameter_I{
+		return &pb.Parameter{
+			Value: &pb.Parameter_I{
 				I: v,
 			},
 			Name: name,
 		}, nil
 	case float64:
-		return &store.Parameter{
-			Value: &store.Parameter_D{
+		return &pb.Parameter{
+			Value: &pb.Parameter_D{
 				D: v,
 			},
 			Name: name,
 		}, nil
 	case bool:
-		return &store.Parameter{
-			Value: &store.Parameter_B{
+		return &pb.Parameter{
+			Value: &pb.Parameter_B{
 				B: v,
 			},
 			Name: name,
 		}, nil
 	case []byte:
-		return &store.Parameter{
-			Value: &store.Parameter_Y{
+		return &pb.Parameter{
+			Value: &pb.Parameter_Y{
 				Y: v,
 			},
 			Name: name,
 		}, nil
 	case string:
-		return &store.Parameter{
-			Value: &store.Parameter_S{
+		return &pb.Parameter{
+			Value: &pb.Parameter_S{
 				S: v,
 			},
 			Name: name,
@@ -434,7 +434,7 @@ func (s *Service) Addr() net.Addr {
 }
 
 func (s *Service) GetLeaderAPIAddr() string {
-	nAddr := s.store.LeaderAddr()
+	nAddr := s.pb.LeaderAddr()
 
 	apiAddr, err := s.manager.GetNodeAPIAddr(nAddr)
 	if err != nil {
@@ -474,18 +474,18 @@ func (s *Service) queryHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	qr := &store.QueryReq{
-		Request: &store.Request{
+	qr := &pb.QueryReq{
+		Request: &pb.Request{
 			Transaction: isTransaction,
 			Statements:  queries,
 		},
 		StrongConsistency: consistency,
 	}
 
-	results, err := s.store.Query(qr)
+	results, err := s.pb.Query(qr)
 	if err != nil {
 		if err == consensus.ErrNotLeader {
-			leaderAddr := s.store.LeaderAddr()
+			leaderAddr := s.pb.LeaderAddr()
 			if leaderAddr == "" {
 				http.Error(w, err.Error(), http.StatusServiceUnavailable)
 				return
@@ -505,7 +505,7 @@ func (s *Service) queryHandler(w http.ResponseWriter, r *http.Request) {
 	s.writeResponse(w, r, resp)
 }
 
-func getReqQueries(r *http.Request) ([]*store.Statement, error) {
+func getReqQueries(r *http.Request) ([]*pb.Statement, error) {
 	if r.Method == http.MethodGet {
 		query := r.URL.Query()
 		stmt := strings.TrimSpace(query.Get("q"))
@@ -514,7 +514,7 @@ func getReqQueries(r *http.Request) ([]*store.Statement, error) {
 			return nil, errors.New("bad query GET request")
 		}
 
-		return []*store.Statement{
+		return []*pb.Statement{
 			{
 				Sql: stmt,
 			},
@@ -560,7 +560,7 @@ func (s *Service) metricHandler(w http.ResponseWriter, r *http.Request) {
 		"version":         runtime.Version(),
 	}
 
-	storeMetrics, err := s.store.Metrics()
+	pbMetrics, err := s.pb.Metrics()
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
@@ -568,7 +568,7 @@ func (s *Service) metricHandler(w http.ResponseWriter, r *http.Request) {
 
 	metricTable := map[string]any{
 		"runtime": runtimeData,
-		"store":   storeMetrics,
+		"store":   pbMetrics,
 	}
 
 	b, err := json.Marshal(metricTable)

@@ -4,13 +4,13 @@ This is a fairly simple implementation of a distributed relational database. Som
 
 ## Directories
 
-* `/engine` Contains the implementation for a node's internal storage. In this case, it contains methods to interact with a sqlite connection.
-* `/proto` Contains different definitions of protobuf types, such that the types can be transferred using gRPC
-* `/server` Contains logic for how a given node accepts gRPC connections
-* `/consensus` Contains logic for distributed consensus using the raft algorithm.
-* `/discovery` Contains logic for keeping track of nodes in a distributed system.
-* `/service` A HTTP interface for interacting with a store and a cluster manager
-* `/manager` An interface for managing cluster communication and getting API addresses of nodes in the cluster.
+- `/engine` Contains the implementation for a node's internal storage. In this case, it contains methods to interact with a sqlite connection.
+- `/proto` Contains different definitions of protobuf types, such that the types can be transferred using gRPC
+- `/server` Contains logic for how a given node accepts gRPC connections
+- `/consensus` Contains logic for distributed consensus using the raft algorithm.
+- `/discovery` Contains logic for keeping track of nodes in a distributed system.
+- `/service` A HTTP interface for interacting with a store and a cluster manager
+- `/manager` An interface for managing cluster communication and getting API addresses of nodes in the cluster.
 
 ## Running tests
 
@@ -32,7 +32,7 @@ Examples of test certificates is stored in the `/test` directory. That directory
 
 ## API Endpoints
 
-* `/join` Add a given node to the cluster
-* `/leave` Remove a given node from the cluster
-* `/execute` Execute given statements
-* `/query` Query given statements
+- `/join` Add a given node to the cluster
+- `/leave` Remove a given node from the cluster
+- `/execute` Execute given statements
+- `/query` Query given statements

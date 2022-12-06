@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/nireo/distsql/engine"
-	store "github.com/nireo/distsql/proto"
-	"github.com/nireo/distsql/proto/encoding"
+	"github.com/nireo/distsql/pb"
+	"github.com/nireo/distsql/pb/encoding"
 	"github.com/stretchr/testify/require"
 )
 
@@ -185,9 +185,9 @@ func TestCopy(t *testing.T) {
 	_, err = src.ExecString("CREATE TABLE foo(id INTEGER NOT NULL PRIMARY KEY, name TEXT)")
 	require.NoError(t, err)
 
-	req := &store.Request{
+	req := &pb.Request{
 		Transaction: true,
-		Statements: []*store.Statement{
+		Statements: []*pb.Statement{
 			{
 				Sql: `INSERT INTO foo(id, name) VALUES(1, "test")`,
 			},
@@ -228,9 +228,9 @@ func TestSerialize(t *testing.T) {
 		t.Fatalf("failed to create table: %s", err.Error())
 	}
 
-	req := &store.Request{
+	req := &pb.Request{
 		Transaction: true,
-		Statements: []*store.Statement{
+		Statements: []*pb.Statement{
 			{
 				Sql: `INSERT INTO foo(id, name) VALUES(1, "fiona")`,
 			},
