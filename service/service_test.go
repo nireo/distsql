@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"testing"
 
-	store "github.com/nireo/distsql/proto"
+	"github.com/nireo/distsql/pb"
 	"github.com/stretchr/testify/require"
 )
 
@@ -45,40 +45,40 @@ func TestInvalid(t *testing.T) {
 	}
 }
 
-type testStore struct {
+type testpb struct {
 	leaderAddr string
 }
 
-func (m *testStore) Execute(er *store.Request) ([]*store.ExecRes, error) {
+func (m *testpb) Execute(er *pb.Request) ([]*pb.ExecRes, error) {
 	return nil, nil
 }
 
-func (m *testStore) Query(qr *store.QueryReq) ([]*store.QueryRes, error) {
+func (m *testpb) Query(qr *pb.QueryReq) ([]*pb.QueryRes, error) {
 	return nil, nil
 }
 
-func (m *testStore) Join(id, addr string) error {
+func (m *testpb) Join(id, addr string) error {
 	return nil
 }
 
-func (m *testStore) Leave(id string) error {
+func (m *testpb) Leave(id string) error {
 	return nil
 }
 
-func (m *testStore) LeaderAddr() string {
+func (m *testpb) LeaderAddr() string {
 	return m.leaderAddr
 }
 
-func (m *testStore) GetServers() ([]*store.Server, error) {
+func (m *testpb) GetServers() ([]*pb.Server, error) {
 	return nil, nil
 }
 
-func (m *testStore) Metrics() (map[string]any, error) {
+func (m *testpb) Metrics() (map[string]any, error) {
 	return nil, nil
 }
 
 func TestServiceOpen(t *testing.T) {
-	ts := &testStore{}
+	ts := &testpb{}
 	s, err := NewService("127.0.0.1:0", ts, Config{
 		EnablePPROF: true,
 	})
@@ -89,7 +89,7 @@ func TestServiceOpen(t *testing.T) {
 }
 
 func Test_404Routes(t *testing.T) {
-	m := &testStore{}
+	m := &testpb{}
 	s, err := NewService("127.0.0.1:0", m, Config{
 		EnablePPROF: true,
 	})
@@ -112,7 +112,7 @@ func Test_404Routes(t *testing.T) {
 }
 
 func TestPPROFRoutes(t *testing.T) {
-	m := &testStore{}
+	m := &testpb{}
 	s, err := NewService("127.0.0.1:0", m, Config{
 		EnablePPROF: true,
 	})
@@ -132,7 +132,7 @@ func TestPPROFRoutes(t *testing.T) {
 }
 
 func TestPPROFFail(t *testing.T) {
-	m := &testStore{}
+	m := &testpb{}
 	s, err := NewService("127.0.0.1:0", m, Config{
 		EnablePPROF: false,
 	})
@@ -151,7 +151,7 @@ func TestPPROFFail(t *testing.T) {
 }
 
 func TestMetrics(t *testing.T) {
-	m := &testStore{}
+	m := &testpb{}
 
 	s, err := NewService("127.0.0.1:0", m, Config{
 		EnablePPROF: false,
