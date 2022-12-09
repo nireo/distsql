@@ -18,9 +18,7 @@ func createTestEngine(t *testing.T) (*engine.Engine, error) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	dbpath := path.Join(dir, "test.db")
-
 	eng, err := engine.Open(dbpath)
 	if err != nil {
 		t.Fatal(err)

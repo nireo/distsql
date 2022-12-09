@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/mattn/go-sqlite3"
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/nireo/distsql/pb"
 )
 
@@ -25,28 +24,28 @@ type Engine struct {
 
 var DatabaseVersion string
 
-func init() {
-	DatabaseVersion, _, _ = sqlite3.Version()
-}
-
 // Open creates a new database engine instance.
 // It starts a read-only and a write connection.
 func Open(path string) (*Engine, error) {
 	// write and read database connection
+	fmt.Println("started creating database")
 	writeDB, err := sql.Open("sqlite3", fmt.Sprintf("file:%s", path))
 	if err != nil {
 		return nil, err
 	}
 
+	fmt.Println("started creating database")
 	// read-only database connection
 	readDB, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?mode=ro", path))
 	if err != nil {
 		return nil, err
 	}
 
+	fmt.Println("started creating database")
 	if err := writeDB.Ping(); err != nil {
 		return nil, fmt.Errorf("failed database ping: %s", err)
 	}
+	fmt.Println("started creating database")
 
 	return &Engine{
 		readDB:   readDB,
