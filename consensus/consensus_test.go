@@ -2,7 +2,6 @@ package consensus
 
 import (
 	"fmt"
-	"io/ioutil"
 	"net"
 	"os"
 	"testing"
@@ -29,51 +28,57 @@ func getFreePort() (int, error) {
 	return l.Addr().(*net.TCPAddr).Port, nil
 }
 
-func TestSimpleUsage(t *testing.T) {
-	var dbs []*Consensus
-	var err error
-	nodeCount := 3
+func newTestStore(t *testing.T, port, id int, bootstrap bool) (*Consensus, error) {
+	datadir, err := os.MkdirTemp("", "store-test")
+	require.NoError(t, err)
 
-	ports := make([]int, nodeCount)
-	for i := 0; i < nodeCount; i++ {
-		ports[i], err = getFreePort()
-		require.NoError(t, err)
+	conf := &Config{}
+	conf.Raft.LocalID = raft.ServerID(fmt.Sprintf("%d", id))
+	conf.Raft.HeartbeatTimeout = 50 * time.Millisecond
+	conf.Raft.ElectionTimeout = 50 * time.Millisecond
+	conf.Raft.Bootstrap = bootstrap
+	conf.Raft.LeaderLeaseTimeout = 50 * time.Millisecond
+	conf.Raft.CommitTimeout = 5 * time.Millisecond
+	conf.Raft.SnapshotThreshold = 10000
+
+	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	require.NoError(t, err)
+	conf.Transport = &Transport{
+		ln: ln,
 	}
 
+	s, err := NewDB(datadir, conf)
+	if err != nil {
+		return nil, err
+	}
+
+	t.Cleanup(func() {
+		os.RemoveAll(datadir)
+		s.Close()
+	})
+
+	return s, nil
+}
+
+func TestSimpleUsage(t *testing.T) {
+	var err error
+	nodeCount := 3
+	dbs := make([]*Consensus, nodeCount)
+
 	for i := 0; i < nodeCount; i++ {
-		dataDir, err := ioutil.TempDir("", "consensus-test-")
+		port, err := getFreePort()
 		require.NoError(t, err)
 
-		defer func(dir string) {
-			_ = os.RemoveAll(dir)
-		}(dataDir)
-
-		ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", ports[i]))
-		require.NoError(t, err)
-
-		config := Config{}
-		config.Raft.LocalID = raft.ServerID(fmt.Sprintf("%d", i))
-		config.Raft.HeartbeatTimeout = 50 * time.Millisecond
-		config.Raft.ElectionTimeout = 50 * time.Millisecond
-		config.Raft.LeaderLeaseTimeout = 50 * time.Millisecond
-		config.Raft.CommitTimeout = 5 * time.Millisecond
-
-		if i == 0 {
-			config.Raft.Bootstrap = true
-		}
-
-		db, err := NewDB(dataDir, &config)
+		dbs[i], err = newTestStore(t, port, i, i == 0)
 		require.NoError(t, err)
 
 		if i != 0 {
-			err = dbs[0].Join(fmt.Sprintf("%d", i), ln.Addr().String())
+			err = dbs[0].Join(fmt.Sprintf("%d", i), dbs[i].config.Transport.Addr().String())
 			require.NoError(t, err)
 		} else {
-			err = db.WaitForLeader(3 * time.Second)
+			err = dbs[0].WaitForLeader(3 * time.Second)
 			require.NoError(t, err)
 		}
-
-		dbs = append(dbs, db)
 	}
 
 	executes := &pb.Request{
@@ -176,9 +181,11 @@ func TestSimpleUsage(t *testing.T) {
 	}
 
 	rr, err := dbs[1].Query(qr)
+	require.NoError(t, err)
 	require.Equal(t, len(rr[0].Values), 0)
 
 	rr, err = dbs[2].Query(qr)
+	require.NoError(t, err)
 	require.Equal(t, len(rr[0].Values), 1)
 }
 

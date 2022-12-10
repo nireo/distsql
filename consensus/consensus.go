@@ -9,7 +9,6 @@ import (
 	"io"
 	"io/ioutil"
 	"math"
-	"net"
 	"os"
 	"path/filepath"
 	"sync"
@@ -42,35 +41,7 @@ type Config struct {
 		Bootstrap         bool
 		SnapshotThreshold uint64
 	}
-}
-
-type Listener interface {
-	net.Listener
-	Dial(address string, timeout time.Duration) (net.Conn, error)
-}
-
-type Transport struct {
-	ln Listener
-}
-
-func NewTransport(ln Listener) *Transport {
-	return &Transport{ln: ln}
-}
-
-func (t *Transport) Dial(addr raft.ServerAddress, timeout time.Duration) (net.Conn, error) {
-	return t.ln.Dial(string(addr), timeout)
-}
-
-func (t *Transport) Accept() (net.Conn, error) {
-	return t.ln.Accept()
-}
-
-func (t *Transport) Close() error {
-	return t.ln.Close()
-}
-
-func (t *Transport) Addr() net.Addr {
-	return t.ln.Addr()
+	Transport *Transport
 }
 
 type Consensus struct {
@@ -84,7 +55,6 @@ type Consensus struct {
 	txmu    sync.RWMutex
 	lastIdx uint64
 	idxmu   sync.RWMutex
-	ln      Listener
 	tn      *raft.NetworkTransport
 }
 
@@ -226,12 +196,12 @@ func (c *Consensus) setupRaft(dataDir string) error {
 		return err
 	}
 
-	stablepb, err := raftboltdb.NewBoltpb(filepath.Join(dataDir, "raft", "raft.db"))
+	stablepb, err := raftboltdb.NewBoltStore(filepath.Join(dataDir, "raft", "raft.db"))
 	if err != nil {
 		return err
 	}
 
-	snapshotpb, err := raft.NewFileSnapshotpb(filepath.Join(dataDir, "raft"), 1, os.Stderr)
+	snapshotpb, err := raft.NewFileSnapshotStore(filepath.Join(dataDir, "raft"), 1, os.Stderr)
 	if err != nil {
 		return err
 	}
@@ -240,7 +210,7 @@ func (c *Consensus) setupRaft(dataDir string) error {
 	timeout := 10 * time.Second
 
 	c.tn = raft.NewNetworkTransport(
-		NewTransport(c.ln),
+		c.config.Transport,
 		maxPool,
 		timeout,
 		os.Stderr,
@@ -280,7 +250,7 @@ func (c *Consensus) setupRaft(dataDir string) error {
 		config := raft.Configuration{
 			Servers: []raft.Server{{
 				ID:      config.LocalID,
-				Address: c.tn.LocalAddr(),
+				Address: raft.ServerAddress(c.config.Transport.Addr().String()),
 			}},
 		}
 		err = c.raft.BootstrapCluster(config).Error()
@@ -441,7 +411,7 @@ func (c *Consensus) Query(q *pb.QueryReq) ([]*pb.QueryRes, error) {
 	return c.db.Query(q.Request)
 }
 
-func (c *Consensus) Repb(rc io.ReadCloser) error {
+func (c *Consensus) Restore(rc io.ReadCloser) error {
 	start := time.Now()
 
 	bytes, err := snapshotToBytes(rc)
