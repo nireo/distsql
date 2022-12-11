@@ -15,6 +15,12 @@ import (
 	"github.com/soheilhy/cmux"
 )
 
+// The coordinator hosts services on two ports. The configured BindAddr and the port
+// of that address will be used for serf communication while the CommunicationPort will
+// be used for raft and http communications. Raft connections are matched by a identifying
+// byte at the start of requests and every other connection not matched with this byte
+// will be assumed to be a HTTP connection.
+
 // Config handles all of the customizable values for Service.
 type Config struct {
 	DataDir           string   // where to store raft data.
@@ -58,19 +64,38 @@ func New(conf Config) (*Coordinator, error) {
 		shutdowns: make(chan struct{}),
 	}
 
+	// run setups
 	if err := c.setupMux(); err != nil {
 		return nil, err
 	}
 
+	setupFns := []func() error{
+		c.setupRaft,
+		c.setupHTTP,
+		c.setupManager,
+	}
+
+	for _, fn := range setupFns {
+		if err := fn(); err != nil {
+			return nil, err
+		}
+	}
+
+	// start connection multiplexer
+	go c.serve()
+
 	return c, nil
 }
 
+// setupMux sets up the terminal multiplexer that handles all of the communication
+// between nodes.
 func (c *Coordinator) setupMux() error {
 	host, _, err := net.SplitHostPort(c.Config.BindAddr)
 	if err != nil {
 		return err
 	}
 
+	// create the listener
 	addr := fmt.Sprintf("%s:%d", host, c.Config.CommunicationPort)
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -81,7 +106,10 @@ func (c *Coordinator) setupMux() error {
 	return nil
 }
 
+// setupRaft sets up a filtered listener to the connection multiplexer and starts
+// raft.
 func (c *Coordinator) setupRaft() error {
+	// create filtered listener
 	raftListener := c.mux.Match(func(reader io.Reader) bool {
 		b := make([]byte, 1)
 		if _, err := reader.Read(b); err != nil {
@@ -90,6 +118,7 @@ func (c *Coordinator) setupRaft() error {
 		return b[0] == 1
 	})
 
+	// create config
 	conf := &consensus.Config{}
 	conf.Transport = consensus.NewTLSTransport(
 		raftListener,
@@ -99,6 +128,7 @@ func (c *Coordinator) setupRaft() error {
 	conf.Raft.LocalID = raft.ServerID(c.Config.NodeName)
 	conf.Raft.Bootstrap = c.Config.Bootstrap
 
+	// create raft instance and bootstrap the cluster if neccesary
 	var err error
 	c.raft, err = consensus.NewDB(c.Config.DataDir, conf)
 	if err != nil {
@@ -116,12 +146,14 @@ func (c *Coordinator) Close() error {
 	c.shutdownlock.Lock()
 	defer c.shutdownlock.Unlock()
 
+	// check that the service hasn't already shutdown
 	if c.shutdown {
 		return nil
 	}
 	c.shutdown = true
 	close(c.shutdowns)
 
+	// stop running different submodules.
 	closeFns := []func() error{
 		c.manager.Leave,
 		c.raft.Close,
@@ -182,6 +214,8 @@ func (c *Coordinator) setupHTTP() error {
 		return err
 	}
 
+	// match any connection not matched with the raft byte to be a HTTP
+	// connection.
 	ln := c.mux.Match(cmux.Any())
 	if err = httpserv.StartWithListener(ln); err != nil {
 		return err

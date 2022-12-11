@@ -44,7 +44,7 @@ type Service struct {
 	addr     string
 
 	manager   Manager
-	pb        Store
+	store     Store
 	closeChan chan struct{}
 
 	// security
@@ -80,11 +80,11 @@ type Config struct {
 	EnablePPROF bool
 }
 
-func NewService(addr string, pb Store, conf Config) (*Service, error) {
+func NewService(addr string, store Store, conf Config) (*Service, error) {
 	logger, err := zap.NewProduction()
 	return &Service{
 		addr:  addr,
-		pb:    pb,
+		store: store,
 		log:   logger,
 		pprof: conf.EnablePPROF,
 	}, err
@@ -232,7 +232,7 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.pb.Join(id.(string), addr.(string)); err != nil {
+	if err := s.store.Join(id.(string), addr.(string)); err != nil {
 		if err == consensus.ErrNotLeader {
 			// TODO: redirect to leader
 		}
@@ -266,7 +266,7 @@ func (s *Service) leave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.pb.Leave(id.(string)); err != nil {
+	if err := s.store.Leave(id.(string)); err != nil {
 		if err == consensus.ErrNotLeader {
 			// TODO: redirect to leader
 		}
@@ -317,7 +317,7 @@ func (s *Service) execHandler(w http.ResponseWriter, r *http.Request) {
 		Results: &DBResponse{},
 	}
 
-	res, err := s.pb.Exec(req)
+	res, err := s.store.Exec(req)
 	if err != nil {
 		response.Error = err.Error()
 	} else {
@@ -452,7 +452,7 @@ func (s *Service) Addr() net.Addr {
 }
 
 func (s *Service) GetLeaderAPIAddr() string {
-	nAddr := s.pb.LeaderAddr()
+	nAddr := s.store.LeaderAddr()
 
 	apiAddr, err := s.manager.GetNodeAPIAddr(nAddr)
 	if err != nil {
@@ -500,10 +500,10 @@ func (s *Service) queryHandler(w http.ResponseWriter, r *http.Request) {
 		StrongConsistency: consistency,
 	}
 
-	results, err := s.pb.Query(qr)
+	results, err := s.store.Query(qr)
 	if err != nil {
 		if err == consensus.ErrNotLeader {
-			leaderAddr := s.pb.LeaderAddr()
+			leaderAddr := s.store.LeaderAddr()
 			if leaderAddr == "" {
 				http.Error(w, err.Error(), http.StatusServiceUnavailable)
 				return
@@ -578,7 +578,7 @@ func (s *Service) metricHandler(w http.ResponseWriter, r *http.Request) {
 		"version":         runtime.Version(),
 	}
 
-	pbMetrics, err := s.pb.Metrics()
+	storeMetrics, err := s.store.Metrics()
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
@@ -586,7 +586,7 @@ func (s *Service) metricHandler(w http.ResponseWriter, r *http.Request) {
 
 	metricTable := map[string]any{
 		"runtime": runtimeData,
-		"store":   pbMetrics,
+		"store":   storeMetrics,
 	}
 
 	b, err := json.Marshal(metricTable)
