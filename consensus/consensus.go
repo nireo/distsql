@@ -544,18 +544,21 @@ func (c *Consensus) Leave(id string) error {
 }
 
 func (c *Consensus) WaitForLeader(timeout time.Duration) error {
-	timeoutc := time.After(timeout)
-	ticker := time.NewTicker(time.Second)
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	timer := time.NewTimer(timeout)
 	defer ticker.Stop()
 
 	for {
 		select {
-		case <-timeoutc:
-			return fmt.Errorf("timed out")
 		case <-ticker.C:
-			if l := c.raft.Leader(); l != "" {
+			l := c.LeaderAddr()
+			if l != "" {
 				return nil
 			}
+		case <-timer.C:
+			return errors.New("wait for leader timeout expired")
 		}
 	}
 }

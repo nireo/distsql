@@ -28,9 +28,9 @@ type Manager interface {
 	GetNodeAPIAddr(nodeAddr string) (string, error)
 }
 
-// pb represents a raft pb.
+// Store represents a raft store.
 type Store interface {
-	Execute(req *pb.Request) ([]*pb.ExecRes, error)
+	Exec(req *pb.Request) ([]*pb.ExecRes, error)
 	Query(req *pb.QueryReq) ([]*pb.QueryRes, error)
 	LeaderAddr() string
 	Join(id, addr string) error
@@ -123,6 +123,24 @@ func (s *Service) Start() error {
 			zap.String("cert_file", s.CertFile),
 			zap.String("key_file", s.KeyFile),
 		)
+	}
+	s.listener = ln
+	s.closeChan = make(chan struct{})
+
+	go func() {
+		err := server.Serve(s.listener)
+		if err != nil {
+			s.log.Info("server.Serve() failed", zap.Error(err))
+		}
+	}()
+	s.log.Info("service running at addr", zap.String("addr", s.listener.Addr().String()))
+
+	return nil
+}
+
+func (s *Service) StartWithListener(ln net.Listener) error {
+	server := http.Server{
+		Handler: s,
 	}
 	s.listener = ln
 	s.closeChan = make(chan struct{})
@@ -299,7 +317,7 @@ func (s *Service) execHandler(w http.ResponseWriter, r *http.Request) {
 		Results: &DBResponse{},
 	}
 
-	res, err := s.pb.Execute(req)
+	res, err := s.pb.Exec(req)
 	if err != nil {
 		response.Error = err.Error()
 	} else {
