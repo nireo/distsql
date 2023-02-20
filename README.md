@@ -1,16 +1,16 @@
 # distsql
 
-This is a fairly simple implementation of a distributed relational database. Some parts of the projects take inspiration from `rqlite`, since the topic of distributed relational databases is quite complicated.
+A minimal and simple implementation of a distributed database written in Go. The underlying storage engine is sqlite as it provides a simple yet robust implementation of an relational database.
 
 ## Directories
 
 - `/engine` Contains the implementation for a node's internal storage. In this case, it contains methods to interact with a sqlite connection.
 - `/proto` Contains different definitions of protobuf types, such that the types can be transferred using gRPC
-- `/server` Contains logic for how a given node accepts gRPC connections
 - `/consensus` Contains logic for distributed consensus using the raft algorithm.
 - `/discovery` Contains logic for keeping track of nodes in a distributed system.
 - `/service` A HTTP interface for interacting with a store and a cluster manager
 - `/manager` An interface for managing cluster communication and getting API addresses of nodes in the cluster.
+- `/coordinator` This package handles logic to combine gRPC and HTTP servers.
 
 ## Running tests
 
