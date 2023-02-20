@@ -49,7 +49,7 @@ type testpb struct {
 	leaderAddr string
 }
 
-func (m *testpb) Execute(er *pb.Request) ([]*pb.ExecRes, error) {
+func (m *testpb) Exec(er *pb.Request) ([]*pb.ExecRes, error) {
 	return nil, nil
 }
 

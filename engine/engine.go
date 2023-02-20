@@ -576,6 +576,9 @@ func (eng *Engine) Metric() (map[string]any, error) {
 	}
 
 	databaseSize, err := eng.Size()
+	if err != nil {
+		return nil, err
+	}
 
 	resultMap := map[string]any{
 		"version":      DatabaseVersion,
