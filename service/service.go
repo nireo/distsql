@@ -581,7 +581,7 @@ func (s *Service) metricHandler(w http.ResponseWriter, r *http.Request) {
 
 	storeMetrics, err := s.store.Metrics()
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -593,12 +593,14 @@ func (s *Service) metricHandler(w http.ResponseWriter, r *http.Request) {
 	b, err := json.Marshal(metricTable)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-	} else {
-		if _, err := w.Write([]byte(b)); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+		return
 	}
+
+	if _, err := w.Write([]byte(b)); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func checkBoolParam(req *http.Request, param string) (bool, error) {

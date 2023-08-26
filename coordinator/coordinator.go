@@ -206,7 +206,7 @@ func (c *Coordinator) setupHTTP() error {
 	}
 
 	conf := service.Config{
-		EnablePPROF: false,
+		EnablePPROF: true,
 	}
 
 	httpserv, err := service.NewService(httpaddr, c.raft, conf)

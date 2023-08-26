@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nireo/distsql/coordinator"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -45,7 +46,10 @@ func httpGetHelper(t *testing.T, addr string) []byte {
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
+	fmt.Println(string(body))
 	require.NoError(t, err)
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	return body
 }
@@ -96,6 +100,7 @@ func TestGetMetrics(t *testing.T) {
 	leaderaddr, err := coordinators[0].Config.HTTPAddr()
 	require.NoError(t, err)
 
+	fmt.Println(leaderaddr)
 	var jsonMap map[string]any
 	data := httpGetHelper(t, leaderaddr+"/metric")
 

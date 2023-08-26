@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"os"
 	"path/filepath"
@@ -195,6 +194,8 @@ func (c *Consensus) setupRaft(dataDir string) error {
 	if err := os.Mkdir(filepath.Join(dataDir, "raft"), os.ModePerm); err != nil {
 		return err
 	}
+
+	c.raftDir = dataDir
 
 	stablepb, err := raftboltdb.NewBoltStore(filepath.Join(dataDir, "raft", "raft.db"))
 	if err != nil {
@@ -565,7 +566,7 @@ func (c *Consensus) WaitForLeader(timeout time.Duration) error {
 
 func snapshotToBytes(rc io.ReadCloser) ([]byte, error) {
 	var offset int64
-	b, err := ioutil.ReadAll(rc)
+	b, err := io.ReadAll(rc)
 	if err != nil {
 		return nil, fmt.Errorf("read all error: %s", err)
 	}
@@ -628,7 +629,7 @@ func createDiskDatabase(b []byte, path string) (*engine.Engine, error) {
 	}
 
 	if b != nil {
-		if err := ioutil.WriteFile(path, b, 0660); err != nil {
+		if err := os.WriteFile(path, b, 0660); err != nil {
 			return nil, err
 		}
 	}

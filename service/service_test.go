@@ -3,7 +3,7 @@ package service
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"testing"
 
@@ -170,7 +170,7 @@ func TestMetrics(t *testing.T) {
 	require.Equal(t, resp.Header.Get("Content-Type"), "application/json; charset=utf-8")
 	require.Equal(t, resp.StatusCode, http.StatusOK)
 
-	data, err := ioutil.ReadAll(resp.Body)
+	data, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	resp.Body.Close()
 
