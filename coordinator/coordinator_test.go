@@ -1,6 +1,7 @@
 package coordinator_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -46,12 +47,52 @@ func httpGetHelper(t *testing.T, addr string) []byte {
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
-	fmt.Println(string(body))
 	require.NoError(t, err)
-
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	return body
+}
+
+func sendExecStmts(t *testing.T, addr string, statements []string) []byte {
+	t.Helper()
+
+	body, err := json.Marshal(statements)
+	require.NoError(t, err)
+
+	r, err := http.NewRequest("POST", addr+"/execute", bytes.NewBuffer(body))
+	require.NoError(t, err)
+
+	client := &http.Client{}
+	res, err := client.Do(r)
+	require.NoError(t, err)
+
+	require.Equal(t, res.StatusCode, http.StatusOK)
+
+	b, err := io.ReadAll(res.Body)
+	require.NoError(t, err)
+
+	return b
+}
+
+func sendQueryStmts(t *testing.T, addr string, statements []string) []byte {
+	t.Helper()
+
+	body, err := json.Marshal(statements)
+	require.NoError(t, err)
+
+	r, err := http.NewRequest("POST", addr+"/query", bytes.NewBuffer(body))
+	require.NoError(t, err)
+
+	client := &http.Client{}
+	res, err := client.Do(r)
+	require.NoError(t, err)
+
+	require.Equal(t, res.StatusCode, http.StatusOK)
+
+	b, err := io.ReadAll(res.Body)
+	require.NoError(t, err)
+
+	return b
 }
 
 func setupNServices(t *testing.T, n int) []*coordinator.Coordinator {
@@ -100,7 +141,6 @@ func TestGetMetrics(t *testing.T) {
 	leaderaddr, err := coordinators[0].Config.HTTPAddr()
 	require.NoError(t, err)
 
-	fmt.Println(leaderaddr)
 	var jsonMap map[string]any
 	data := httpGetHelper(t, leaderaddr+"/metric")
 
@@ -112,4 +152,25 @@ func TestGetMetrics(t *testing.T) {
 
 	_, ok = jsonMap["runtime"]
 	require.True(t, ok)
+}
+
+func TestLeaderOperations(t *testing.T) {
+	coordinators := setupNServices(t, 3)
+	time.Sleep(2 * time.Second)
+
+	leaderAddr, err := coordinators[0].Config.HTTPAddr()
+	require.NoError(t, err)
+
+	data := sendExecStmts(t, leaderAddr, []string{
+		`CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, name TEXT)`,
+		`INSERT INTO test(name) VALUES("atest")`,
+		`INSERT INTO test(name) VALUES("btest")`,
+	})
+
+	data2 := sendQueryStmts(t, leaderAddr, []string{
+		`SELECT * FROM test`,
+	})
+
+	require.Equal(t, `{"results":[{},{"last_insert_id":1,"rows_affected":1},{"last_insert_id":2,"rows_affected":1}]}`, string(data))
+	require.Equal(t, `{"results":[{"columns":["id","name"],"types":["integer","text"],"values":[[1,"atest"],[2,"btest"]]}]}`, string(data2))
 }

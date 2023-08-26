@@ -14,6 +14,9 @@ import (
 	"github.com/nireo/distsql/pb"
 )
 
+// Engine handles database operations such that queries and executes.
+// This also handles backups and copying the data. Also collects metrics
+// for node information.
 type Engine struct {
 	readDB   *sql.DB
 	writeDB  *sql.DB
@@ -21,8 +24,6 @@ type Engine struct {
 	isMem    bool
 	path     string
 }
-
-var DatabaseVersion string
 
 // Open creates a new database engine instance.
 // It starts a read-only and a write connection.
@@ -459,6 +460,7 @@ func isStringType(t string) bool {
 		strings.HasPrefix(t, "clob")
 }
 
+// FileSize size of the sqlite file on disk.
 func (eng *Engine) FileSize() (int64, error) {
 	if eng.isMem {
 		return 0, nil
@@ -490,6 +492,7 @@ func (eng *Engine) Serialize() ([]byte, error) {
 	return os.ReadFile(eng.path)
 }
 
+// Backup copies the data from connections to a given path.
 func (eng *Engine) Backup(path string) error {
 	dstDB, err := Open(path)
 	if err != nil {
@@ -550,6 +553,8 @@ func copyEngine(dst, src *Engine) error {
 		})
 }
 
+// Metric gets some data from the database. Basically information about
+// how much data has been used etc...
 func (eng *Engine) Metric() (map[string]any, error) {
 	memData, err := (func() (map[string]int64, error) {
 		ms := make(map[string]int64)
@@ -581,7 +586,6 @@ func (eng *Engine) Metric() (map[string]any, error) {
 	}
 
 	resultMap := map[string]any{
-		"version":      DatabaseVersion,
 		"memory_stats": memData,
 		"size":         databaseSize,
 	}
@@ -592,6 +596,7 @@ func (eng *Engine) Copy(dst *Engine) error {
 	return copyEngine(dst, eng)
 }
 
+// genRandomString is used for random temporary connection names.
 func genRandomString() string {
 	var output strings.Builder
 	chars := "abcdedfghijklmnopqrstABCDEFGHIJKLMNOP"
