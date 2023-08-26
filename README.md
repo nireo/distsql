@@ -14,25 +14,16 @@ A minimal and simple implementation of a distributed database written in Go. The
 
 ## Running tests
 
-First you need to create test certificates such that authentication tests can run properly.
-
-```
-$ make gencert
-```
-
-This command creates three certificates, one for the server, one for an authorized client and a third one for an unauthorized client.
-
-After that you just need to run:
+Simply run
 
 ```
 $ make test
 ```
-
-Examples of test certificates is stored in the `/test` directory. That directory also contains files for defining actions a given user can access in the `policy.csv` file.
 
 ## API Endpoints
 
 - `/join` Add a given node to the cluster
 - `/leave` Remove a given node from the cluster
 - `/execute` Execute given statements
-- `/query` Query given statements
+- `/query` Query given statement
+- `/metric` Get node metrics
