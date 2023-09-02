@@ -235,7 +235,15 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) {
 
 	if err := s.store.Join(id.(string), addr.(string)); err != nil {
 		if err == consensus.ErrNotLeader {
-			// TODO: redirect to leader
+			leaderAddr := s.store.LeaderAddr()
+			if leaderAddr == "" {
+				http.Error(w, err.Error(), http.StatusServiceUnavailable)
+				return
+			}
+
+			redirect := s.redirectAddr(r, leaderAddr)
+			http.Redirect(w, r, redirect, http.StatusMovedPermanently)
+			return
 		}
 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -269,7 +277,15 @@ func (s *Service) leave(w http.ResponseWriter, r *http.Request) {
 
 	if err := s.store.Leave(id.(string)); err != nil {
 		if err == consensus.ErrNotLeader {
-			// TODO: redirect to leader
+			leaderAddr := s.store.LeaderAddr()
+			if leaderAddr == "" {
+				http.Error(w, err.Error(), http.StatusServiceUnavailable)
+				return
+			}
+
+			redirect := s.redirectAddr(r, leaderAddr)
+			http.Redirect(w, r, redirect, http.StatusMovedPermanently)
+			return
 		}
 
 		w.WriteHeader(http.StatusInternalServerError)

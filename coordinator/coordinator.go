@@ -50,7 +50,6 @@ type Coordinator struct {
 	mux          cmux.CMux
 	manager      *manager.Manager
 	raft         *consensus.Consensus
-	httpserv     *service.Service
 	shutdown     bool
 	shutdowns    chan struct{}
 	shutdownlock sync.Mutex

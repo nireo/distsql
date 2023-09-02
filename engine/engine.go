@@ -514,7 +514,9 @@ func copyConnection(dst, src *sqlite3.SQLiteConn) error {
 	for {
 		done, err := backup.Step(-1)
 		if err != nil {
-			backup.Finish()
+			if err := backup.Finish(); err != nil {
+				return err
+			}
 			return err
 		}
 

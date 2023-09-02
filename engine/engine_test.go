@@ -211,6 +211,7 @@ func TestCopy(t *testing.T) {
 	require.NoError(t, err)
 
 	res, err := dst.QueryString(`SELECT * FROM foo`)
+	require.NoError(t, err)
 
 	if exp, got := `[{"columns":["id","name"],"types":["integer","text"],"values":[[1,"test"],[2,"test"],[3,"test"],[4,"test"]]}]`, convertToJSON(res); exp != got {
 		t.Fatalf("unexpected results for query\nexp: %s\ngot: %s", exp, got)

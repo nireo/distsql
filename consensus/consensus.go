@@ -45,7 +45,6 @@ type Config struct {
 
 type Consensus struct {
 	config  *Config
-	running bool
 	raftDir string
 	raft    *raft.Raft
 	log     *zap.Logger
@@ -148,7 +147,9 @@ func (snapshot *snapshot) Persist(sink raft.SnapshotSink) error {
 		return sink.Close()
 	}()
 	if err != nil {
-		sink.Cancel()
+		if err := sink.Cancel(); err != nil {
+			return err
+		}
 		return err
 	}
 
@@ -391,7 +392,7 @@ func (c *Consensus) Query(q *pb.QueryReq) ([]*pb.QueryRes, error) {
 			return nil, err
 		}
 
-		future := c.raft.Apply(b, 10*time.Second).(raft.ApplyFuture)
+		future := c.raft.Apply(b, 10*time.Second)
 		if future.Error() != nil {
 			if future.Error() == raft.ErrNotLeader {
 				return nil, ErrNotLeader
