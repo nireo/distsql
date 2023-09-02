@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -59,7 +60,7 @@ func sendExecStmts(t *testing.T, addr string, statements []string) []byte {
 	body, err := json.Marshal(statements)
 	require.NoError(t, err)
 
-	r, err := http.NewRequest("POST", addr+"/execute", bytes.NewBuffer(body))
+	r, err := http.NewRequest("POST", strings.TrimSpace(addr+"/execute"), bytes.NewBuffer(body))
 	require.NoError(t, err)
 
 	client := &http.Client{}
@@ -100,7 +101,7 @@ func setupNServices(t *testing.T, n int) []*coordinator.Coordinator {
 
 	for i := 0; i < 3; i++ {
 		ports := genNPorts(2)
-		bindaddr := fmt.Sprintf("%s:%d", "127.0.0.1", ports[0])
+		bindaddr := fmt.Sprintf("%s:%d", "localhost", ports[0])
 		rpcPort := ports[1]
 
 		datadir, err := os.MkdirTemp("", "service-test")
@@ -111,14 +112,20 @@ func setupNServices(t *testing.T, n int) []*coordinator.Coordinator {
 			startJoinAddrs = append(startJoinAddrs, services[0].Config.BindAddr)
 		}
 
-		service, err := coordinator.New(coordinator.Config{
+		conf := coordinator.Config{
 			NodeName:          fmt.Sprintf("%d", i),
 			Bootstrap:         i == 0,
 			StartJoinAddrs:    startJoinAddrs,
 			BindAddr:          bindaddr,
 			DataDir:           datadir,
 			CommunicationPort: rpcPort,
-		})
+		}
+		if i != 0 {
+			conf.LeaderStartAddr, err = services[0].Config.HTTPAddr()
+			require.NoError(t, err)
+		}
+
+		service, err := coordinator.New(conf)
 		require.NoError(t, err)
 
 		services = append(services, service)
@@ -136,7 +143,7 @@ func setupNServices(t *testing.T, n int) []*coordinator.Coordinator {
 
 func TestGetMetrics(t *testing.T) {
 	coordinators := setupNServices(t, 3)
-	time.Sleep(2 * time.Second)
+	time.Sleep(3 * time.Second)
 
 	leaderaddr, err := coordinators[0].Config.HTTPAddr()
 	require.NoError(t, err)
@@ -174,3 +181,20 @@ func TestLeaderOperations(t *testing.T) {
 	require.Equal(t, `{"results":[{},{"last_insert_id":1,"rows_affected":1},{"last_insert_id":2,"rows_affected":1}]}`, string(data))
 	require.Equal(t, `{"results":[{"columns":["id","name"],"types":["integer","text"],"values":[[1,"atest"],[2,"btest"]]}]}`, string(data2))
 }
+
+// func TestWriteRequestsToLeaderWork(t *testing.T) {
+// 	coordinators := setupNServices(t, 3)
+// 	time.Sleep(6 * time.Second)
+//
+// 	followerAddr1, err := coordinators[1].Config.HTTPAddr()
+// 	require.NoError(t, err)
+//
+// 	fmt.Println("sending exec addr to", followerAddr1)
+// 	data := sendExecStmts(t, followerAddr1, []string{
+// 		`CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, name TEXT)`,
+// 		`INSERT INTO test(name) VALUES("atest")`,
+// 		`INSERT INTO test(name) VALUES("btest")`,
+// 	})
+//
+// 	require.Equal(t, `{"results":[{},{"last_insert_id":1,"rows_affected":1},{"last_insert_id":2,"rows_affected":1}]}`, string(data))
+// }

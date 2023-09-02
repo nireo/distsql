@@ -40,6 +40,7 @@ type Store interface {
 	Metrics() (map[string]any, error)
 }
 
+// Service handles the http front to the store.
 type Service struct {
 	listener net.Listener
 	addr     string
@@ -249,6 +250,7 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func (s *Service) leave(w http.ResponseWriter, r *http.Request) {
@@ -336,6 +338,17 @@ func (s *Service) execHandler(w http.ResponseWriter, r *http.Request) {
 
 	res, err := s.store.Exec(req)
 	if err != nil {
+		if err == consensus.ErrNotLeader {
+			leaderAddr := s.store.LeaderAddr()
+			if leaderAddr == "" {
+				http.Error(w, err.Error(), http.StatusServiceUnavailable)
+				return
+			}
+
+			redirect := s.redirectAddr(r, leaderAddr)
+			http.Redirect(w, r, redirect, http.StatusMovedPermanently)
+			return
+		}
 		response.Error = err.Error()
 	} else {
 		response.Results.ExecRes = res
@@ -348,7 +361,7 @@ func (s *Service) redirectAddr(r *http.Request, url string) string {
 	if rq != "" {
 		rq = fmt.Sprintf("?%s", rq)
 	}
-	return fmt.Sprintf("%s%s%s", url, r.URL.Path, rq)
+	return fmt.Sprintf("http://%s%s%s", url, r.URL.Path, rq)
 }
 
 func parseStatements(b []byte) ([]*pb.Statement, error) {

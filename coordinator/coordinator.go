@@ -1,10 +1,13 @@
 package coordinator
 
 import (
+	"bytes"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"sync"
 	"time"
 
@@ -29,6 +32,7 @@ type Config struct {
 	StartJoinAddrs    []string // addresses to join to
 	Bootstrap         bool     // should bootstrap cluster?
 	NodeName          string   // raft server id
+	LeaderStartAddr   string   // mostly for testing
 
 	ServerTLS *tls.Config
 	PeerTLS   *tls.Config
@@ -41,6 +45,15 @@ func (c *Config) HTTPAddr() (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("http://%s:%d", host, c.CommunicationPort), nil
+}
+
+// RaftAddr returns the raft connection address
+func (c *Config) RaftAddr() (string, error) {
+	host, _, err := net.SplitHostPort(c.BindAddr)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s:%d", host, c.CommunicationPort), nil
 }
 
 // Coordinator handles connecting all of the independent components of the system.
@@ -78,6 +91,10 @@ func New(conf Config) (*Coordinator, error) {
 		if err := fn(); err != nil {
 			return nil, err
 		}
+	}
+
+	if err := c.joinToLeader(); err != nil {
+		return nil, err
 	}
 
 	// start connection multiplexer
@@ -137,6 +154,7 @@ func (c *Coordinator) setupRaft() error {
 	if c.Config.Bootstrap {
 		err = c.raft.WaitForLeader(3 * time.Second)
 	}
+
 	return err
 }
 
@@ -175,6 +193,47 @@ func (c *Coordinator) serve() error {
 		return err
 	}
 
+	return nil
+}
+
+func (c *Coordinator) joinToLeader() error {
+	// don't connect to anything this is fine.
+	if c.Config.LeaderStartAddr == "" {
+		return nil
+	}
+
+	addr, err := c.Config.RaftAddr()
+	if err != nil {
+		return err
+	}
+
+	body := map[string]string{
+		"id":   c.Config.NodeName,
+		"addr": addr,
+	}
+
+	reqBytes, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("GOT ADDR", c.Config.LeaderStartAddr)
+	r, err := http.NewRequest("POST", c.Config.LeaderStartAddr+"/join", bytes.NewBuffer(reqBytes))
+	if err != nil {
+		return err
+	}
+	client := &http.Client{}
+	res, err := client.Do(r)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	bod, _ := io.ReadAll(res.Body)
+	fmt.Println(string(bod))
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to join leader cluster got code: %d", res.StatusCode)
+	}
 	return nil
 }
 
