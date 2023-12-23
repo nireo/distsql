@@ -1,7 +1,6 @@
 package manager
 
 import (
-	"io"
 	"net"
 
 	"github.com/hashicorp/serf/serf"
@@ -62,7 +61,6 @@ func (r *Manager) setupSerf() error {
 	config := serf.DefaultConfig()
 	config.Init() // allocate subdata structures
 
-	config.LogOutput = io.Discard
 	config.MemberlistConfig.BindAddr = addr.IP.String()
 	config.MemberlistConfig.BindPort = addr.Port
 

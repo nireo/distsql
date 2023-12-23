@@ -182,19 +182,18 @@ func TestLeaderOperations(t *testing.T) {
 	require.Equal(t, `{"results":[{"columns":["id","name"],"types":["integer","text"],"values":[[1,"atest"],[2,"btest"]]}]}`, string(data2))
 }
 
-// func TestWriteRequestsToLeaderWork(t *testing.T) {
-// 	coordinators := setupNServices(t, 3)
-// 	time.Sleep(6 * time.Second)
-//
-// 	followerAddr1, err := coordinators[1].Config.HTTPAddr()
-// 	require.NoError(t, err)
-//
-// 	fmt.Println("sending exec addr to", followerAddr1)
-// 	data := sendExecStmts(t, followerAddr1, []string{
-// 		`CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, name TEXT)`,
-// 		`INSERT INTO test(name) VALUES("atest")`,
-// 		`INSERT INTO test(name) VALUES("btest")`,
-// 	})
-//
-// 	require.Equal(t, `{"results":[{},{"last_insert_id":1,"rows_affected":1},{"last_insert_id":2,"rows_affected":1}]}`, string(data))
-// }
+func TestWriteRequestsToLeaderWork(t *testing.T) {
+	coordinators := setupNServices(t, 3)
+	time.Sleep(6 * time.Second)
+
+	followerAddr1, err := coordinators[1].Config.HTTPAddr()
+	require.NoError(t, err)
+
+	data := sendExecStmts(t, followerAddr1, []string{
+		`CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, name TEXT)`,
+		`INSERT INTO test(name) VALUES("atest")`,
+		`INSERT INTO test(name) VALUES("btest")`,
+	})
+
+	require.Equal(t, `{"results":[{},{"last_insert_id":1,"rows_affected":1},{"last_insert_id":2,"rows_affected":1}]}`, string(data))
+}

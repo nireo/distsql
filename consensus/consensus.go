@@ -26,14 +26,19 @@ type RequestType uint8
 const (
 	ExecRequest RequestType = iota
 
+	// RaftRPC is given at the start of connection to signify that raft should handle that connection.
 	RaftRPC int = 1
 )
 
 var (
+	// ErrNotLeader defines a project-wide not leader error
 	ErrNotLeader = errors.New("not raft leader")
-	ErrJoinSelf  = errors.New("trying to join self")
+
+	// ErrJoinSelf happens when a node tries to join itself.
+	ErrJoinSelf = errors.New("trying to join self")
 )
 
+// Config configures parts of raft and also transport that is used.
 type Config struct {
 	Raft struct {
 		raft.Config

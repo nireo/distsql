@@ -84,7 +84,7 @@ func New(conf Config) (*Coordinator, error) {
 	setupFns := []func() error{
 		c.setupRaft,
 		c.setupHTTP,
-		c.setupManager,
+		// c.setupManager,
 	}
 
 	for _, fn := range setupFns {
@@ -172,7 +172,7 @@ func (c *Coordinator) Close() error {
 
 	// stop running different submodules.
 	closeFns := []func() error{
-		c.manager.Leave,
+		// c.manager.Leave,
 		c.raft.Close,
 	}
 
@@ -217,11 +217,11 @@ func (c *Coordinator) joinToLeader() error {
 		return err
 	}
 
-	fmt.Println("GOT ADDR", c.Config.LeaderStartAddr)
 	r, err := http.NewRequest("POST", c.Config.LeaderStartAddr+"/join", bytes.NewBuffer(reqBytes))
 	if err != nil {
 		return err
 	}
+
 	client := &http.Client{}
 	res, err := client.Do(r)
 	if err != nil {
@@ -229,11 +229,10 @@ func (c *Coordinator) joinToLeader() error {
 	}
 	defer res.Body.Close()
 
-	bod, _ := io.ReadAll(res.Body)
-	fmt.Println(string(bod))
 	if res.StatusCode != http.StatusOK {
 		return fmt.Errorf("failed to join leader cluster got code: %d", res.StatusCode)
 	}
+
 	return nil
 }
 
