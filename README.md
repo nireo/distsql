@@ -20,6 +20,8 @@ Simply run
 $ make test
 ```
 
+The end-to-end tests are in the coordinator package. 
+
 ## API Endpoints
 
 - `/join` Add a given node to the cluster
