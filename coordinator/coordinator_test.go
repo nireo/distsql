@@ -104,6 +104,8 @@ func setupNServices(t *testing.T, n int) []*coordinator.Coordinator {
 		bindaddr := fmt.Sprintf("%s:%d", "localhost", ports[0])
 		rpcPort := ports[1]
 
+		fmt.Println(bindaddr)
+
 		datadir, err := os.MkdirTemp("", "service-test")
 		require.NoError(t, err)
 
@@ -161,7 +163,7 @@ func TestGetMetrics(t *testing.T) {
 	require.True(t, ok)
 }
 
-func TestLeaderOperations(t *testing.T) {
+func TestWritesToLeaderQueryFromFollower(t *testing.T) {
 	coordinators := setupNServices(t, 3)
 	time.Sleep(2 * time.Second)
 
@@ -174,7 +176,11 @@ func TestLeaderOperations(t *testing.T) {
 		`INSERT INTO test(name) VALUES("btest")`,
 	})
 
-	data2 := sendQueryStmts(t, leaderAddr, []string{
+	followerAddr1, err := coordinators[1].Config.HTTPAddr()
+	require.NoError(t, err)
+
+	time.Sleep(1 * time.Second)
+	data2 := sendQueryStmts(t, followerAddr1, []string{
 		`SELECT * FROM test`,
 	})
 
@@ -184,7 +190,7 @@ func TestLeaderOperations(t *testing.T) {
 
 func TestWriteRequestsToLeaderWork(t *testing.T) {
 	coordinators := setupNServices(t, 3)
-	time.Sleep(6 * time.Second)
+	time.Sleep(2 * time.Second)
 
 	followerAddr1, err := coordinators[1].Config.HTTPAddr()
 	require.NoError(t, err)

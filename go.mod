@@ -1,6 +1,6 @@
 module github.com/nireo/distsql
 
-go 1.18
+go 1.21
 
 require (
 	github.com/hashicorp/raft v1.5.0
@@ -16,6 +16,7 @@ require (
 
 require (
 	github.com/boltdb/bolt v1.3.1 // indirect
+	github.com/golang/mock v1.6.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20230822172742-b8732ec3820d // indirect
 )
 

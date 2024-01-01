@@ -29,7 +29,8 @@ type Manager interface {
 	GetNodeAPIAddr(nodeAddr string) (string, error)
 }
 
-// Store represents a raft store.
+//go:generate mockgen -destination=store_mock.go -package=service github.com/nireo/distsql/service Store
+
 type Store interface {
 	Exec(req *pb.Request) ([]*pb.ExecRes, error)
 	Query(req *pb.QueryReq) ([]*pb.QueryRes, error)
@@ -310,11 +311,6 @@ func (s *Service) writeResponse(w http.ResponseWriter, r *http.Request, resp *Da
 func (s *Service) execHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
-	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-
 	b, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -346,6 +342,7 @@ func (s *Service) execHandler(w http.ResponseWriter, r *http.Request) {
 			}
 
 			redirect := s.redirectAddr(r, leaderAddr)
+			fmt.Println("REDIRECT", redirect)
 			http.Redirect(w, r, redirect, http.StatusMovedPermanently)
 			return
 		}
